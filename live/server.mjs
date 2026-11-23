@@ -5,7 +5,7 @@ import {randomBytes,createHash} from 'node:crypto';
 import {aircraft,defects,priorities} from './calls.mjs';
 import {track} from './track.mjs';
 import {journal} from './journal.mjs';
-import {homedir} from 'node:os';
+import {homedir,tmpdir} from 'node:os';
 import {join,dirname} from 'node:path';
 const agents=JSON.parse(readFileSync(new URL('./agents.json',import.meta.url)));
 const feedKey=process.env.TRACK_KEY || randomBytes(24).toString('hex');
@@ -81,7 +81,7 @@ function rank(c,record=true){
 }
 const pending = new Map();
 let nextCall = 1;
-const dbFile=process.env.STATE_DB||join(homedir(),'.perron-15','shift.sqlite');
+const dbFile=process.env.STATE_DB||join(process.env.RENDER?tmpdir():homedir(),'.perron-15','shift.sqlite');
 mkdirSync(dirname(dbFile),{recursive:true});const db=journal(dbFile);
 const saved=db.restore();
 if(saved){
@@ -100,8 +100,8 @@ function log(kind,actor,c,detail={}){
 }
 const attempts = new Map();
 const tls = process.env.TLS_CERT && process.env.TLS_KEY;
-const port = Number(process.env.PORT || 8175);
-const host = process.env.HOST || '127.0.0.1';
+const port = Number(process.env.PORT || (process.env.RENDER?10000:8175));
+const host = process.env.HOST || (process.env.RENDER?'0.0.0.0':'127.0.0.1');
 if (!tls && !['127.0.0.1','localhost','::1'].includes(host) && process.env.TRUST_HTTPS_PROXY !== 'yes') {
   throw Error('Для сети настройте HTTPS (TLS_CERT и TLS_KEY) или защищённый обратный прокси.');
 }
@@ -122,6 +122,8 @@ const files = new Map(Object.entries({
 function fail(status,message){throw Object.assign(Error(message),{status});}
 async function handle(req,res){
  const path = req.url.split('?')[0];
+ if((req.method==='GET'||req.method==='HEAD')&&path==='/healthz'){res.writeHead(200,{'Content-Type':'text/plain','Cache-Control':'no-store'});return res.end(req.method==='HEAD'?'':'ready')}
+ if(req.method==='HEAD'&&path==='/'){res.writeHead(200,{'Content-Type':'text/html; charset=utf-8'});return res.end()}
  const post = req.method === 'POST';
  if (!post && req.method !== 'GET') fail(405,'Метод недоступен');
  const token = /(?:^|; *)shift=([a-f0-9]+)/.exec(req.headers.cookie || '')?.[1];

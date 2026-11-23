@@ -4,9 +4,9 @@ services:
     runtime: node
     plan: free
     rootDir: live
-    buildCommand: node --check server.mjs
+    buildCommand: node --test
     startCommand: node server.mjs
-    healthCheckPath: /
+    healthCheckPath: /healthz
     envVars:
       - key: NODE_VERSION
         value: "24"
