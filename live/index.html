@@ -5,12 +5,18 @@
 <form id="login"><fieldset><legend>Рабочее место</legend><label><input type="radio" name="role" value="dispatcher" checked> Диспетчер</label><label><input type="radio" name="role" value="engineer"> Инженер</label></fieldset>
 <label for="code">Код доступа</label><input id="code" type="password" required autocomplete="current-password"><button class="primary">Войти</button></form></section>
 <section id="engineer" hidden><small>МОБИЛЬНОЕ РАБОЧЕЕ МЕСТО</small><h1>Моя смена</h1><article><h2>Геопозиция</h2><p id="gps">Передача выключена.</p><button id="track" class="primary">Включить GPS</button></article><article><h2>Моё задание</h2><p id="myjob">Ожидание назначения</p><button id="done" hidden>Завершить задание</button></article></section>
-<section id="dispatch" hidden><small>ДИСПЕТЧЕРСКАЯ</small><h1>Карта смены</h1><div class="layout"><article class="mapbox"><div class="maphead"><h2>Полигон ВДНХ</h2><span>10 зон</span></div><svg id="map" viewBox="-1080 -930 2230 2040" aria-label="Карта полигона с маршрутами инженеров"></svg><div class="legend"><i></i> Маршрут <i></i> Инженер <i></i> Зона вызова</div></article><div><form id="call-form"><h2>Новый вызов от экипажа</h2>
+<section id="dispatch" hidden><small>ДИСПЕТЧЕРСКАЯ</small><h1>Карта смены</h1><div class="layout"><article class="mapbox"><div class="maphead"><h2>Полигон ВДНХ</h2><span>10 зон</span></div><svg id="map" viewBox="-1080 -930 2230 2040" aria-label="Карта полигона с маршрутами инженеров"></svg><div class="legend"><i></i> Маршрут <i></i> Инженер <i></i> Зона вызова</div></article><div><form id="call-form"><h2>Регистрация вызова</h2>
 <label for="zone">Место вызова</label><select id="zone"></select>
 <label for="aircraft">Тип ВС</label><select id="aircraft"></select>
 <label for="tail">Бортовой номер (по желанию)</label><input type="text" id="tail" maxlength="24" placeholder="Например, RA-89141">
 <label for="defect">Неисправность</label><select id="defect"></select>
+<details><summary>Свободная формулировка / новый тип</summary><label for="custom">Описание</label><input id="custom" type="text" maxlength="300"><label for="ata">Глава ATA</label><input id="ata" type="number" min="1" max="99"></details>
+<label for="lookup">Поиск неисправности</label><input type="search" id="lookup" placeholder="Название или глава ATA">
+<label for="source">Источник замечания</label><select id="source"><option>Экипаж</option><option>Сотрудник</option><option>MCC/ЦПУ</option></select>
+<label for="remark">Входящие замечания MCC/ЦПУ</label><select id="remark"><option value="">Регистрация вручную</option></select>
+<label for="scheduled">Прибытие ВС по расписанию (при наличии)</label><input type="datetime-local" id="scheduled">
+<label><input type="checkbox" id="kit"> Получить комплект на складе</label>
 <label for="priority">Приоритет</label><select id="priority"></select>
 <button class="primary">Зафиксировать вызов</button></form>
-<article><h2>Очередь вызовов</h2><label for="pending">Вызов для назначения</label><select id="pending"></select><p id="call-detail"></p><p class="hint">Пешком · 5 км/ч · подготовка 2 мин</p><h2>Инженеры смены</h2><div id="team"></div><button id="assign" class="primary" disabled>Назначить инженера</button></article><a href="/scenarios">Открыть учебные сценарии Шереметьево ↗</a></div></div></section>
+<article><h2>Очередь вызовов</h2><label for="pending">Вызов для назначения</label><select id="pending"></select><p id="call-detail"></p><p class="hint">Пешком 5 км/ч. Машина движется с разрешённой скоростью участка.</p><h2>Инженеры смены</h2><div id="team"></div><button id="assign" class="primary" disabled>Назначить инженера</button></article><a href="/scenarios">Открыть учебные сценарии Шереметьево ↗</a></div></div></section>
 <p id="notice" role="status" aria-live="polite"></p></main></body></html>

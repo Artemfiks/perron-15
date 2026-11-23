@@ -1,0 +1,9 @@
+<!doctype html><html lang="ru"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>GPS спецтранспорта</title><link rel="stylesheet" href="/style.css"><main><h1>GPS спецтранспорта</h1><article><h2 id="vehicle"></h2><p id="status">Разрешите доступ к местоположению и оставьте страницу открытой.</p><button id="switch">Включить GPS</button></article></main><script type="module">
+const params=new URLSearchParams(location.hash.slice(1)),obj=params.get('obj'),key=params.get('key'),button=document.querySelector('#switch'),status=document.querySelector('#status');let watch=null;
+document.querySelector('#vehicle').textContent=obj||'Откройте ссылку диспетчера';
+button.disabled=!obj||!key||!navigator.geolocation;
+button.onclick=()=>{if(watch!==null){navigator.geolocation.clearWatch(watch);watch=null;button.textContent='Включить GPS';status.textContent='Передача остановлена';return}
+ button.textContent='Остановить передачу';watch=navigator.geolocation.watchPosition(async p=>{try{
+ const r=await fetch('/api/v1/track',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+key},body:JSON.stringify({obj,lat:p.coords.latitude,lon:p.coords.longitude,t:new Date(p.timestamp).toISOString(),acc:p.coords.accuracy})}),data=await r.json();
+ status.textContent=data.applied?'Передано '+new Date(p.timestamp).toLocaleTimeString():data.error||'Точка пропущена';}catch{status.textContent='Нет связи с диспетчерской'}},e=>{status.textContent=e.message},{enableHighAccuracy:true,maximumAge:0,timeout:20000})};
+</script></html>
