@@ -1,0 +1,1124 @@
+<title>Перрон-15</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Sans+Condensed:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+
+<style>
+/* ============================================================================
+   «Перрон-15» — система умной диспетчеризации оперативного техобслуживания ВС
+   Всероссийский конкурс детских инженерных изобретений «Инженеры транспорта»
+   Технологическое направление · сфера «Авиаперевозки» · Задание № 1
+   ========================================================================== */
+
+/* --- Токены темы. Полная светлая палитра на голом :root ------------------ */
+:root{
+  --bg:#EDF1F5;
+  --surface:#FFFFFF;
+  --surface-2:#F5F8FA;
+  --line:#D0D9E2;
+  --line-soft:#E2E8EE;
+  --ink:#0E1A23;
+  --ink-2:#48596A;
+  --ink-3:#7C8C9A;
+  --accent:#12557F;
+  --accent-ink:#FFFFFF;
+  --accent-soft:#E0EBF4;
+  --ok:#186D47;
+  --ok-soft:#DDF0E6;
+  --warn:#8E5C05;
+  --warn-soft:#FAEDD4;
+  --crit:#A02B22;
+  --crit-soft:#FBE2DF;
+  --apron:#DBE2E9;
+  --apron-line:#C6D0DA;
+  --road:#C2CCD6;
+  --marking:#D79E17;
+  --route:#12557F;
+  --q-pd:#B34D1B;
+  --q-av:#2A6BA8;
+  --q-eo:#71479E;
+  --q-sg:#186D47;
+  --shadow:0 1px 2px rgba(14,26,35,.06), 0 6px 18px rgba(14,26,35,.06);
+  --radius:10px;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#0B131A;
+    --surface:#121D26;
+    --surface-2:#17242F;
+    --line:#24353F;
+    --line-soft:#1C2B35;
+    --ink:#E4EDF3;
+    --ink-2:#9DB0BE;
+    --ink-3:#6C8192;
+    --accent:#56A6DD;
+    --accent-ink:#06131C;
+    --accent-soft:#11303F;
+    --ok:#46B782;
+    --ok-soft:#10301F;
+    --warn:#DBA342;
+    --warn-soft:#332406;
+    --crit:#E36C62;
+    --crit-soft:#3A1512;
+    --apron:#1A2732;
+    --apron-line:#24333F;
+    --road:#25343F;
+    --marking:#B98A26;
+    --route:#56A6DD;
+    --q-pd:#E07A45;
+    --q-av:#5B9DD6;
+    --q-eo:#A47BCF;
+    --q-sg:#46B782;
+    --shadow:0 1px 2px rgba(0,0,0,.4), 0 6px 18px rgba(0,0,0,.35);
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#0B131A;
+  --surface:#121D26;
+  --surface-2:#17242F;
+  --line:#24353F;
+  --line-soft:#1C2B35;
+  --ink:#E4EDF3;
+  --ink-2:#9DB0BE;
+  --ink-3:#6C8192;
+  --accent:#56A6DD;
+  --accent-ink:#06131C;
+  --accent-soft:#11303F;
+  --ok:#46B782;
+  --ok-soft:#10301F;
+  --warn:#DBA342;
+  --warn-soft:#332406;
+  --crit:#E36C62;
+  --crit-soft:#3A1512;
+  --apron:#1A2732;
+  --apron-line:#24333F;
+  --road:#25343F;
+  --marking:#B98A26;
+  --route:#56A6DD;
+  --q-pd:#E07A45;
+  --q-av:#5B9DD6;
+  --q-eo:#A47BCF;
+  --q-sg:#46B782;
+  --shadow:0 1px 2px rgba(0,0,0,.4), 0 6px 18px rgba(0,0,0,.35);
+}
+
+*{box-sizing:border-box}
+body{
+  margin:0;
+  background:var(--bg);
+  color:var(--ink);
+  font-family:"IBM Plex Sans","Segoe UI",system-ui,sans-serif;
+  font-size:14px;
+  line-height:1.45;
+  -webkit-font-smoothing:antialiased;
+}
+.wrap{max-width:1560px;margin:0 auto;padding-inline:16px;padding-block:18px 40px}
+
+h1,h2,h3{font-family:"IBM Plex Sans Condensed","IBM Plex Sans",sans-serif;margin:0;text-wrap:balance}
+.mono{font-family:"IBM Plex Mono",ui-monospace,monospace;font-variant-numeric:tabular-nums}
+
+/* --- Шапка --------------------------------------------------------------- */
+.top{
+  display:flex;flex-wrap:wrap;gap:14px;align-items:flex-end;justify-content:space-between;
+  padding-bottom:14px;border-bottom:2px solid var(--ink);margin-bottom:18px;
+}
+.brand{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap}
+.brand h1{font-size:30px;font-weight:700;letter-spacing:-.01em;line-height:1}
+.brand .sub{color:var(--ink-2);font-size:13px;max-width:56ch}
+.reg{
+  font-family:"IBM Plex Mono",monospace;font-size:11px;letter-spacing:.08em;text-transform:uppercase;
+  color:var(--accent);background:var(--accent-soft);border:1px solid var(--accent);
+  padding:3px 8px;border-radius:999px;white-space:nowrap;
+}
+.clockbar{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.stat{
+  background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);
+  padding:7px 12px;min-width:104px;box-shadow:var(--shadow);
+}
+.stat .k{font-size:10px;letter-spacing:.07em;text-transform:uppercase;color:var(--ink-3)}
+.stat .v{font-family:"IBM Plex Mono",monospace;font-size:19px;font-weight:600;font-variant-numeric:tabular-nums}
+
+/* --- Сетка консоли ------------------------------------------------------- */
+.console{display:grid;grid-template-columns:288px minmax(0,1fr) 336px;gap:16px;align-items:start}
+@media (max-width:1240px){.console{grid-template-columns:270px minmax(0,1fr)}.col-c{grid-column:1/-1}}
+@media (max-width:840px){.console{grid-template-columns:1fr}.col-c{grid-column:auto}}
+
+.panel{
+  background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);
+  box-shadow:var(--shadow);overflow:hidden;
+}
+.panel+.panel{margin-top:14px}
+.panel>h2{
+  font-size:12px;letter-spacing:.09em;text-transform:uppercase;font-weight:600;color:var(--ink-2);
+  padding:10px 13px;border-bottom:1px solid var(--line-soft);background:var(--surface-2);
+  display:flex;justify-content:space-between;align-items:center;gap:8px;
+}
+.panel .body{padding:13px}
+.panel .body.tight{padding:9px}
+
+label{display:block;font-size:11px;letter-spacing:.05em;text-transform:uppercase;color:var(--ink-3);margin-bottom:4px}
+select,input[type=text],button,textarea{font-family:inherit;font-size:13px}
+select,input[type=text],textarea{
+  width:100%;padding:7px 9px;border:1px solid var(--line);border-radius:7px;
+  background:var(--surface-2);color:var(--ink);
+}
+.field+.field{margin-top:10px}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+button{
+  border:1px solid var(--line);background:var(--surface-2);color:var(--ink);
+  padding:8px 12px;border-radius:7px;cursor:pointer;font-weight:500;
+  transition:background .12s ease,border-color .12s ease;
+}
+button:hover{background:var(--accent-soft);border-color:var(--accent)}
+button.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink);font-weight:600}
+button.primary:hover{filter:brightness(1.08)}
+button.ghost{background:transparent}
+button:disabled{opacity:.45;cursor:not-allowed}
+.btnrow{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+.btnrow.stack button{flex:1 1 auto}
+
+/* --- Сценарии ------------------------------------------------------------ */
+.scn{display:flex;flex-direction:column;gap:6px}
+.scn button{text-align:left;display:flex;gap:9px;align-items:flex-start;line-height:1.3;padding:8px 10px}
+.scn .n{
+  font-family:"IBM Plex Mono",monospace;font-size:11px;font-weight:600;color:var(--accent);
+  background:var(--accent-soft);border-radius:4px;padding:1px 5px;flex:none;margin-top:1px;
+}
+.scn .t{font-size:12.5px}
+.scn .t em{display:block;font-style:normal;color:var(--ink-3);font-size:11px;margin-top:1px}
+
+/* --- Карта --------------------------------------------------------------- */
+.mapwrap{position:relative;background:var(--surface-2);border-bottom:1px solid var(--line-soft)}
+svg.map{display:block;width:100%;height:auto;max-width:100%}
+.legend{
+  display:flex;flex-wrap:wrap;gap:6px 16px;padding:9px 13px;font-size:11.5px;color:var(--ink-2);
+  border-bottom:1px solid var(--line-soft);
+}
+.legend span{display:inline-flex;align-items:center;gap:6px}
+.dot{width:9px;height:9px;border-radius:50%;display:inline-block;flex:none}
+.hintbar{
+  padding:8px 13px;font-size:11.5px;color:var(--ink-3);display:flex;justify-content:space-between;
+  gap:10px;flex-wrap:wrap;
+}
+.hintbar b{color:var(--ink-2);font-weight:600}
+
+/* --- Таблицы ------------------------------------------------------------- */
+.tablewrap{overflow-x:auto}
+table{border-collapse:collapse;width:100%;font-size:12.5px}
+th,td{padding:6px 9px;text-align:left;border-bottom:1px solid var(--line-soft);vertical-align:top}
+th{
+  font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-3);font-weight:600;
+  white-space:nowrap;background:var(--surface-2);position:sticky;top:0;
+}
+td.num{font-family:"IBM Plex Mono",monospace;font-variant-numeric:tabular-nums;white-space:nowrap}
+tr.pick td{background:var(--ok-soft)}
+tr.over td{color:var(--ink-3)}
+
+/* --- Пилюли и полоски состояния ------------------------------------------ */
+.pill{
+  display:inline-block;font-size:10.5px;font-weight:600;letter-spacing:.04em;
+  padding:1px 7px;border-radius:999px;border:1px solid currentColor;white-space:nowrap;
+}
+.pill.ok{color:var(--ok);background:var(--ok-soft)}
+.pill.warn{color:var(--warn);background:var(--warn-soft)}
+.pill.crit{color:var(--crit);background:var(--crit-soft)}
+.pill.q{border:none;color:#fff;padding:1px 6px}
+.q-PD{background:var(--q-pd)}.q-AV{background:var(--q-av)}.q-EO{background:var(--q-eo)}.q-SG{background:var(--q-sg)}
+
+/* --- Карточка решения ---------------------------------------------------- */
+.verdict{border-left:4px solid var(--ok);background:var(--ok-soft);padding:11px 13px}
+.verdict.bad{border-left-color:var(--crit);background:var(--crit-soft)}
+.verdict .who{font-size:16px;font-weight:600;font-family:"IBM Plex Sans Condensed",sans-serif}
+.verdict .eta{font-family:"IBM Plex Mono",monospace;font-size:27px;font-weight:600;line-height:1.05;margin:2px 0}
+.verdict .meta{font-size:12px;color:var(--ink-2)}
+.kv{display:grid;grid-template-columns:auto 1fr;gap:2px 12px;font-size:12.5px;margin-top:10px}
+.kv dt{color:var(--ink-3)}
+.kv dd{margin:0;font-family:"IBM Plex Mono",monospace;font-variant-numeric:tabular-nums}
+
+/* --- Сравнение с диспетчером --------------------------------------------- */
+.cmp{display:grid;grid-template-columns:1fr 1fr;gap:1px;background:var(--line-soft)}
+.cmp>div{background:var(--surface);padding:10px 12px}
+.cmp .lbl{font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-3)}
+.cmp .nm{font-size:13px;font-weight:600;margin-top:2px}
+.cmp .t{font-family:"IBM Plex Mono",monospace;font-size:20px;font-weight:600}
+.gain{padding:9px 12px;font-size:12.5px;border-top:1px solid var(--line-soft);background:var(--surface-2)}
+
+/* --- Лог бота ------------------------------------------------------------ */
+.bot{max-height:290px;overflow-y:auto;padding:10px 12px;display:flex;flex-direction:column;gap:8px}
+.msg{border:1px solid var(--line-soft);border-radius:9px;padding:8px 10px;background:var(--surface-2);font-size:12.5px}
+.msg .hd{
+  display:flex;justify-content:space-between;gap:8px;font-size:10px;letter-spacing:.05em;
+  text-transform:uppercase;color:var(--ink-3);margin-bottom:3px;
+}
+.msg.assign{border-left:3px solid var(--accent)}
+.msg.alert{border-left:3px solid var(--crit)}
+.msg.near{border-left:3px solid var(--warn)}
+.msg .rt{font-family:"IBM Plex Mono",monospace;font-size:11px;color:var(--ink-2);margin-top:3px;word-break:break-word}
+
+/* --- Очередь заявок ------------------------------------------------------ */
+.calls{display:flex;flex-direction:column;gap:6px}
+.call{
+  border:1px solid var(--line);border-radius:8px;padding:8px 10px;background:var(--surface-2);
+  cursor:pointer;font-size:12.5px;
+}
+.call[aria-selected=true]{border-color:var(--accent);background:var(--accent-soft)}
+.call .r1{display:flex;justify-content:space-between;gap:8px;font-weight:600}
+.call .r2{color:var(--ink-2);font-size:11.5px;margin-top:2px}
+.call .r3{margin-top:4px;display:flex;gap:6px;flex-wrap:wrap}
+.empty{color:var(--ink-3);font-size:12.5px;padding:6px 2px}
+
+/* --- Блок контрольных тестов --------------------------------------------- */
+.tests{margin-top:18px}
+.summary{display:flex;flex-wrap:wrap;gap:10px;padding:12px 13px;border-bottom:1px solid var(--line-soft)}
+.summary .stat{min-width:132px;box-shadow:none}
+textarea#raw{height:180px;font-family:"IBM Plex Mono",monospace;font-size:11px;white-space:pre}
+.note{font-size:11.5px;color:var(--ink-3);padding:10px 13px;border-top:1px solid var(--line-soft)}
+
+@media (prefers-reduced-motion: reduce){
+  *{animation:none!important;transition:none!important}
+}
+</style>
+
+<div class="wrap">
+
+  <header class="top">
+    <div class="brand">
+      <h1>Перрон-15</h1>
+      <span class="reg">регламент ОТО · 15 мин</span>
+      <div class="sub">Система поддержки принятия решений диспетчера оперативного техобслуживания. Полигон — места стоянки 201–207 западного сектора терминала B, аэродром Шереметьево (UUEE), внутренние рейсы ПАО «Аэрофлот».</div>
+    </div>
+    <div class="clockbar">
+      <div class="stat"><div class="k">Время расчёта</div><div class="v" id="s-calc">—</div></div>
+      <div class="stat"><div class="k">Свободно ОТО</div><div class="v" id="s-free">—</div></div>
+      <div class="stat"><div class="k">Открытых заявок</div><div class="v" id="s-open">—</div></div>
+    </div>
+  </header>
+
+  <div class="console">
+
+    <!-- ============ Колонка A: ввод и сценарии ============ -->
+    <div class="col-a">
+      <section class="panel">
+        <h2>Новый вызов от экипажа</h2>
+        <div class="body">
+          <div class="field">
+            <label for="f-stand">Стоянка ВС</label>
+            <select id="f-stand"></select>
+          </div>
+          <div class="field">
+            <label for="f-defect">Тип неисправности</label>
+            <select id="f-defect"></select>
+          </div>
+          <div class="field">
+            <label for="f-prio">Приоритет</label>
+            <select id="f-prio">
+              <option value="A">A — борт под вылет</option>
+              <option value="B" selected>B — транзит / стоянка</option>
+            </select>
+          </div>
+          <div class="btnrow stack">
+            <button class="primary" id="b-add">Зафиксировать вызов</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2>Очередь заявок</h2>
+        <div class="body tight"><div class="calls" id="calls"></div></div>
+      </section>
+
+      <section class="panel">
+        <h2>Контрольные сценарии</h2>
+        <div class="body tight">
+          <div class="scn" id="scn"></div>
+          <div class="btnrow stack">
+            <button id="b-runall">Прогнать все 6</button>
+            <button class="ghost" id="b-reset">Сброс смены</button>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <!-- ============ Колонка B: карта ============ -->
+    <div class="col-b">
+      <section class="panel">
+        <h2>Западный сектор терминала B · МС 201–207 <span class="mono" id="map-scale">Перрон 4 · 134.550 · Руление 119.000 / 121.800 / 122.900</span></h2>
+        <div class="legend">
+          <span><i class="dot" style="background:var(--q-pd)"></i> планер и двигатели</span>
+          <span><i class="dot" style="background:var(--q-av)"></i> авионика</span>
+          <span><i class="dot" style="background:var(--q-eo)"></i> электрооборудование</span>
+          <span><i class="dot" style="background:var(--q-sg)"></i> шасси и гидросистема</span>
+          <span><i class="dot" style="background:var(--ink-3);border-radius:2px"></i> перронный а/м</span>
+        </div>
+        <div class="mapwrap"><svg class="map" id="map" viewBox="0 0 1200 750" role="img" aria-label="Схема северного перрона аэродрома Шереметьево у терминала B с расположением стоянок, сотрудников ОТО и маршрутом назначения"></svg></div>
+        <div class="hintbar">
+          <span>Выберите сотрудника, затем любой узел — он переместится туда. Это ручная проверка алгоритма жюри.
+          Схема построена по перронной карте UUEE/SVO 20-9B «Terminal B West Sector» и карте аэродрома ИКАО: реальны номера мест стоянки МС 201–207, обозначения рулёжных дорожек L4, L7, L8, N2, N3 и магистральной B, ангар, площадка ПОО-4, частота перрона 134,550 МГц и характеристики ВПП 06C/24C. Приняты в модели: взаимные расстояния между узлами, положение склада запчастей и поста ОТО, бортовые номера. Схема перерисована самостоятельно и не воспроизводит оригинальную карту.</span>
+          <span><b id="sel-info">Сотрудник не выбран</b></span>
+        </div>
+      </section>
+    </div>
+
+    <!-- ============ Колонка C: решение ============ -->
+    <div class="col-c">
+      <section class="panel">
+        <h2>Предложение системы <span class="mono" id="v-calc"></span></h2>
+        <div id="verdict"><div class="body"><div class="empty">Зафиксируйте вызов или запустите сценарий.</div></div></div>
+      </section>
+
+      <section class="panel">
+        <h2>Система против интуиции диспетчера</h2>
+        <div id="cmp"><div class="body"><div class="empty">Нет данных.</div></div></div>
+      </section>
+
+      <section class="panel">
+        <h2>Кандидаты по квалификации</h2>
+        <div class="tablewrap" style="max-height:280px;overflow-y:auto">
+          <table id="cand"><tbody><tr><td class="empty">Нет данных.</td></tr></tbody></table>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2>Корпоративный бот ОТО</h2>
+        <div class="bot" id="bot"></div>
+      </section>
+    </div>
+  </div>
+
+  <!-- ============ Результаты контрольных тестов ============ -->
+  <section class="panel tests">
+    <h2>Результаты контрольных тестов</h2>
+    <div class="summary" id="sum">
+      <div class="stat"><div class="k">Сценариев</div><div class="v" id="t-scn">0</div></div>
+      <div class="stat"><div class="k">Назначений</div><div class="v" id="t-asg">0</div></div>
+      <div class="stat"><div class="k">В регламенте 15 мин</div><div class="v" id="t-ok">—</div></div>
+      <div class="stat"><div class="k">Медиана расчёта</div><div class="v" id="t-med">—</div></div>
+      <div class="stat"><div class="k">Максимум расчёта</div><div class="v" id="t-max">—</div></div>
+      <div class="stat"><div class="k">Суммарный выигрыш</div><div class="v" id="t-gain">—</div></div>
+    </div>
+    <div class="tablewrap">
+      <table id="testtable"><tbody><tr><td class="empty" style="padding:13px">Нажмите «Прогнать все 6», чтобы получить протокол испытаний.</td></tr></tbody></table>
+    </div>
+    <div class="body" style="border-top:1px solid var(--line-soft)">
+      <div class="btnrow" style="margin-top:0">
+        <button id="b-raw">Показать протокол в JSON</button>
+      </div>
+      <div class="field" id="rawbox" hidden style="margin-top:10px">
+        <label for="raw">Протокол испытаний (выделить и скопировать)</label>
+        <textarea id="raw" readonly spellcheck="false"></textarea>
+      </div>
+    </div>
+    <div class="note">
+      Модель времени: перемещение пешком 80 м/мин, перронный автомобиль 300 м/мин, посадка/высадка 1,5 мин,
+      подготовка и получение задания 2,0 мин, получение спецкомплекта на складе 3,0 мин. Маршруты считаются
+      по графу проездов перрона (алгоритм Дейкстры), а не по прямой.
+    </div>
+  </section>
+</div>
+
+<script>
+"use strict";
+/* ============================================================================
+   1. ПРЕДМЕТНАЯ МОДЕЛЬ
+   ========================================================================== */
+
+/* Узлы графа перрона. Координаты — метры в локальной системе аэродрома.      */
+const NODES = {
+  // Номера мест стоянки — реальные, западный сектор терминала B
+  // (карта UUEE/SVO 20-9B «Terminal B West Sector»). Бортовые номера условные.
+  ST1:{x:140,y:170,t:"stand",n:"МС 201",ac:"RA-89141 · SSJ100"},
+  ST2:{x:290,y:170,t:"stand",n:"МС 202",ac:"RA-73745 · A320"},
+  ST3:{x:440,y:170,t:"stand",n:"МС 203",ac:"RA-89052 · SSJ100"},
+  ST4:{x:590,y:170,t:"stand",n:"МС 204",ac:"VP-BZQ · B737-800"},
+  ST5:{x:740,y:170,t:"stand",n:"МС 205",ac:"RA-73686 · A321"},
+  ST6:{x:890,y:170,t:"stand",n:"МС 206",ac:"RA-89011 · SSJ100"},
+  ST7:{x:1040,y:170,t:"stand",n:"МС 207",ac:"VP-BMB · B737-800"},
+  RD1:{x:140,y:300,t:"road",n:"Проезд R1"}, RD2:{x:290,y:300,t:"road",n:"Проезд R2"},
+  RD3:{x:440,y:300,t:"road",n:"Проезд R3"}, RD4:{x:590,y:300,t:"road",n:"Проезд R4"},
+  RD5:{x:740,y:300,t:"road",n:"Проезд R5"}, RD6:{x:890,y:300,t:"road",n:"Проезд R6"},
+  RD7:{x:1040,y:300,t:"road",n:"Проезд R7"},
+  LW1:{x:140,y:470,t:"road",n:"Проезд L1"}, LW2:{x:440,y:470,t:"road",n:"Проезд L2"},
+  LW3:{x:740,y:470,t:"road",n:"Проезд L3"}, LW4:{x:1040,y:470,t:"road",n:"Проезд L4"},
+  // Ангар и площадка ПОО-4 — реальные объекты западного сектора по карте 20-9B.
+  // Склад запчастей и пост ОТО — элементы модели: перронные карты показывают
+  // движение ВС и внутренние служебные объекты на них не публикуются.
+  TC:{x:60,y:560,t:"obj",n:"Ангар"},
+  SK:{x:440,y:590,t:"obj",n:"Склад запчастей"},
+  HG:{x:740,y:590,t:"obj",n:"Площадка ПОО-4"},
+  KP:{x:1140,y:560,t:"obj",n:"Пост ОТО"}
+};
+
+/* Рёбра графа — реальные проезды перрона. Вес считается по координатам.      */
+const EDGES = [
+  ["ST1","RD1"],["ST2","RD2"],["ST3","RD3"],["ST4","RD4"],["ST5","RD5"],["ST6","RD6"],["ST7","RD7"],
+  ["RD1","RD2"],["RD2","RD3"],["RD3","RD4"],["RD4","RD5"],["RD5","RD6"],["RD6","RD7"],
+  ["RD1","LW1"],["RD3","LW2"],["RD5","LW3"],["RD7","LW4"],
+  ["LW1","LW2"],["LW2","LW3"],["LW3","LW4"],
+  ["LW1","TC"],["LW2","SK"],["LW3","HG"],["LW4","KP"]
+];
+
+/* Квалификации по профилю допуска инженерно-технического персонала.          */
+const QUALS = {
+  PD:{n:"Планер и двигатели", s:"ПиД"},
+  AV:{n:"Авионика",           s:"АВ"},
+  EO:{n:"Электрооборудование",s:"ЭО"},
+  SG:{n:"Шасси и гидросистема",s:"ШГ"}
+};
+
+/* Типы неисправностей с привязкой к главам ATA и требуемой квалификации.
+   kit=true — нужен спецкомплект, маршрут обязательно проходит через склад.   */
+const DEFECTS = {
+  ENG:{n:"Утечка масла силовой установки", ata:"ATA 79", q:"PD", kit:false, work:25},
+  SKIN:{n:"Повреждение обшивки фюзеляжа",  ata:"ATA 53", q:"PD", kit:true,  work:40},
+  HYD:{n:"Падение давления гидросистемы",  ata:"ATA 29", q:"SG", kit:true,  work:35},
+  GEAR:{n:"Отказ индикации положения шасси",ata:"ATA 32", q:"SG", kit:false, work:30},
+  NAV:{n:"Отказ навигационного оборудования",ata:"ATA 34",q:"AV", kit:false, work:20},
+  RAD:{n:"Отказ УКВ-радиосвязи",           ata:"ATA 23", q:"AV", kit:false, work:20},
+  ELE:{n:"Отказ электропитания салона",    ata:"ATA 24", q:"EO", kit:false, work:25},
+  LGT:{n:"Отказ внешнего светотехнического оборудования",ata:"ATA 33",q:"EO",kit:false,work:15}
+};
+
+/* Нормативы модели времени (минуты, метры в минуту).                         */
+const WALK = 80, DRIVE = 300, VEH_OVERHEAD = 1.5, PREP = 2.0, KIT_TIME = 3.0, LIMIT = 15;
+
+/* Исходное состояние смены.                                                  */
+const BASE_STAFF = [
+  {id:"E1", fio:"Соколов А. И.",    q:"PD", node:"RD2", busy:0},
+  {id:"E2", fio:"Панкратов Д. С.",  q:"PD", node:"HG",  busy:6},
+  {id:"E3", fio:"Ерохин М. В.",     q:"PD", node:"TC",  busy:0},
+  {id:"E4", fio:"Натальин А. Ю.",   q:"PD", node:"LW3", busy:0},
+  {id:"E5", fio:"Гайдуков Р. А.",   q:"AV", node:"TC",  busy:0},
+  {id:"E6", fio:"Юсупов Т. Р.",     q:"AV", node:"ST6", busy:3},
+  {id:"E7", fio:"Лебедева О. П.",   q:"AV", node:"HG",  busy:0},
+  {id:"E8", fio:"Матвеев К. Н.",    q:"EO", node:"RD4", busy:0},
+  {id:"E9", fio:"Зотов И. И.",      q:"EO", node:"KP",  busy:0},
+  {id:"E10",fio:"Дёмин С. А.",      q:"SG", node:"SK",  busy:0},
+  {id:"E11",fio:"Ишмуратов В. Г.",  q:"SG", node:"ST1", busy:14},
+  {id:"E12",fio:"Ковригин П. Л.",   q:"SG", node:"RD6", busy:0}
+];
+const BASE_VEH = [
+  {id:"V1", n:"Перронный а/м 21", node:"RD3", free:true},
+  {id:"V2", n:"Перронный а/м 07", node:"KP",  free:true},
+  {id:"V3", n:"Перронный а/м 14", node:"LW3", free:false}
+];
+
+/* ============================================================================
+   2. ГРАФ И ПОИСК КРАТЧАЙШЕГО ПУТИ (Дейкстра)
+   ========================================================================== */
+
+const ADJ = {};                                    // список смежности
+for (const id in NODES) ADJ[id] = [];
+for (const [a,b] of EDGES){
+  const w = Math.hypot(NODES[a].x-NODES[b].x, NODES[a].y-NODES[b].y);
+  ADJ[a].push({to:b,w}); ADJ[b].push({to:a,w});
+}
+
+const SPCACHE = new Map();                         // кэш дерева путей по источнику
+
+/** Дерево кратчайших путей из узла src. Граф мал (23 узла), поэтому
+ *  достаточно Дейкстры на массиве — O(V²), доли миллисекунды. */
+function dijkstra(src){
+  if (SPCACHE.has(src)) return SPCACHE.get(src);
+  const dist = {}, prev = {}, seen = {};
+  for (const id in NODES) dist[id] = Infinity;
+  dist[src] = 0;
+  for(;;){
+    let u = null, best = Infinity;
+    for (const id in NODES) if (!seen[id] && dist[id] < best){ best = dist[id]; u = id; }
+    if (u === null) break;
+    seen[u] = true;
+    for (const e of ADJ[u]) if (dist[u]+e.w < dist[e.to]){ dist[e.to] = dist[u]+e.w; prev[e.to] = u; }
+  }
+  const r = {dist,prev};
+  SPCACHE.set(src,r);
+  return r;
+}
+const distM = (a,b) => dijkstra(a).dist[b];                     // длина маршрута, м
+function pathOf(a,b){                                           // последовательность узлов
+  const {prev} = dijkstra(a); const out = [b];
+  let c = b; let guard = 0;
+  while (c !== a && guard++ < 100){ c = prev[c]; if (c === undefined) return [a,b]; out.push(c); }
+  return out.reverse();
+}
+const joinPath = (p1,p2) => p1.concat(p2.slice(1));
+
+/* ============================================================================
+   3. ЯДРО: РАСЧЁТ ВРЕМЕНИ ПРИБЫТИЯ И ПОДБОР КАНДИДАТА
+   ========================================================================== */
+
+/** Расчётное время прибытия сотрудника к борту.
+ *  Сравниваются два способа перемещения — пешком и на свободном перронном
+ *  автомобиле, — выбирается быстрейший. Если требуется спецкомплект,
+ *  маршрут принудительно проходит через склад запчастей.                     */
+function computeETA(emp, call, veh){
+  const d = DEFECTS[call.defect], target = call.stand;
+  const kit = d.kit, kitT = kit ? KIT_TIME : 0;
+
+  // Вариант 1 — пешком.
+  const wDist = kit ? distM(emp.node,"SK") + distM("SK",target) : distM(emp.node,target);
+  let best = {
+    mode:"пешком", minutes: wDist/WALK + PREP + kitT, dist: wDist, veh:null,
+    path: kit ? joinPath(pathOf(emp.node,"SK"), pathOf("SK",target)) : pathOf(emp.node,target)
+  };
+
+  // Вариант 2 — перебор свободных перронных автомобилей.
+  for (const v of veh){
+    if (!v.free) continue;
+    const toVeh = distM(emp.node, v.node);
+    const drive = kit ? distM(v.node,"SK") + distM("SK",target) : distM(v.node,target);
+    const m = toVeh/WALK + VEH_OVERHEAD + drive/DRIVE + PREP + kitT;
+    if (m < best.minutes){
+      best = {
+        mode:"на "+v.n.toLowerCase(), minutes:m, dist:toVeh+drive, veh:v,
+        path: joinPath(pathOf(emp.node, v.node),
+               kit ? joinPath(pathOf(v.node,"SK"), pathOf("SK",target)) : pathOf(v.node,target))
+      };
+    }
+  }
+
+  // Фактическая загруженность: занятый сотрудник выезжает только освободившись.
+  best.minutes += emp.busy;
+  best.minutes = Math.round(best.minutes*10)/10;
+  return best;
+}
+
+/** Полный подбор: фильтр по квалификации → расчёт ETA → отсечение по
+ *  регламенту 15 минут → сортировка. Возвращает разбор всех кандидатов.      */
+function solve(call, st){
+  const need = DEFECTS[call.defect].q;
+  const cands = st.staff.filter(e => e.q === need).map(e => {
+    const r = computeETA(e, call, st.veh);
+    // busyAt фиксирует загрузку на момент расчёта: после назначения поле
+    // emp.busy изменится, а протокол должен показывать исходные данные.
+    return {emp:e, busyAt:e.busy, ...r, inLimit: r.minutes <= LIMIT};
+  }).sort((a,b) => a.minutes - b.minutes);
+
+  const pick = cands.find(c => c.inLimit) || cands[0] || null;
+
+  // Базовая линия: как сейчас действует диспетчер — берёт визуально ближайшего
+  // по прямой специалиста нужного профиля, не зная его загрузки и проездов.
+  let naive = null;
+  const sameQual = st.staff.filter(e => e.q === need);
+  if (sameQual.length){
+    const s = NODES[call.stand];
+    const nearest = sameQual.reduce((a,b) =>
+      Math.hypot(NODES[a.node].x-s.x, NODES[a.node].y-s.y) <=
+      Math.hypot(NODES[b.node].x-s.x, NODES[b.node].y-s.y) ? a : b);
+    naive = cands.find(c => c.emp.id === nearest.id);
+  }
+  return {cands, pick, naive};
+}
+
+/* ============================================================================
+   4. СОСТОЯНИЕ И СЦЕНАРИИ
+   ========================================================================== */
+
+const clone = o => JSON.parse(JSON.stringify(o));
+let st, sel = null, selCall = null, lastSolve = null, lastMs = 0, testRows = [];
+
+function freshState(){
+  return {staff:clone(BASE_STAFF), veh:clone(BASE_VEH), calls:[], log:[], seq:0, t:0};
+}
+
+/* Шесть контрольных сценариев по требованиям задания: разное расположение,
+   разная специализация, несколько вызовов подряд, внештатные условия.        */
+const SCENARIOS = [
+  {id:1, n:"Штатный вызов", d:"один борт, профильный инженер свободен",
+   patch:{}, calls:[["ST3","NAV","B"]]},
+  {id:2, n:"Ближний ≠ доступный", d:"визуально ближайший занят 14 мин",
+   patch:{E11:{busy:14}}, calls:[["ST1","GEAR","A"]]},
+  {id:3, n:"Три вызова подряд", d:"перераспределение бригады в реальном времени",
+   patch:{}, calls:[["ST2","ENG","A"],["ST5","NAV","B"],["ST6","HYD","A"]]},
+  {id:4, n:"Профиль почти исчерпан", d:"двое из трёх авиоников заняты",
+   patch:{E5:{busy:11}, E6:{busy:3}}, calls:[["ST4","RAD","A"]]},
+  {id:5, n:"Дальний борт и спецкомплект", d:"маршрут через склад, нужен транспорт",
+   patch:{}, calls:[["ST7","SKIN","A"]]},
+  {id:6, n:"Внештатная: регламент под угрозой", d:"весь профиль ШГ занят — эскалация",
+   patch:{E10:{busy:16,node:"HG"}, E11:{busy:19}, E12:{busy:13,node:"KP"}},
+   calls:[["ST7","HYD","A"]]}
+];
+
+function applyScenario(s){
+  st = freshState();
+  for (const id in s.patch) Object.assign(st.staff.find(e => e.id === id), s.patch[id]);
+  bot("system","Загружен сценарий " + s.id + " — " + s.n, s.d);
+  for (const [stand,defect,prio] of s.calls){
+    const c = addCall(stand, defect, prio, true);
+    const res = runSolve(c);
+    if (res && res.pick) assign(c, res.pick, true);
+  }
+  render();
+}
+
+/* ============================================================================
+   5. ДЕЙСТВИЯ
+   ========================================================================== */
+
+function addCall(stand, defect, prio, quiet){
+  st.t += 1;
+  const c = {id:++st.seq, stand, defect, prio, open:true,
+             at:"T+" + String(st.t).padStart(2,"0"), assigned:null};
+  st.calls.push(c); selCall = c;
+  if (!quiet){
+    bot("alert","Вызов №" + c.id + " · " + NODES[stand].n,
+        DEFECTS[defect].n + " (" + DEFECTS[defect].ata + "). Борт " + NODES[stand].ac +
+        ". Приоритет " + prio + ".");
+  }
+  return c;
+}
+
+/** Замеряем чистое время работы алгоритма — это контрольный показатель
+ *  задания (не более 10 секунд на выдачу предложения).                       */
+function runSolve(call){
+  const t0 = performance.now();
+  const res = solve(call, st);
+  lastMs = performance.now() - t0;
+  lastSolve = {call, ...res};
+  return res;
+}
+
+function assign(call, cand, quiet){
+  call.open = false;
+  call.assigned = {emp:cand.emp.id, fio:cand.emp.fio, eta:cand.minutes,
+                   mode:cand.mode, inLimit:cand.inLimit, path:cand.path};
+
+  const e = st.staff.find(x => x.id === cand.emp.id);
+  e.node = call.stand;                                    // прибыл на стоянку
+  e.busy = Math.round(cand.minutes + DEFECTS[call.defect].work);
+  if (cand.veh){                                          // автомобиль ушёл с ним
+    const v = st.veh.find(x => x.id === cand.veh.id);
+    if (v){ v.free = false; v.node = call.stand; }
+  }
+
+  bot("assign", "Назначение · " + cand.emp.fio,
+      NODES[call.stand].n + ", " + NODES[call.stand].ac + ". " +
+      DEFECTS[call.defect].n + ". Приступить к перемещению " + cand.mode + ".",
+      "Прибытие " + cand.minutes.toFixed(1) + " мин " +
+      (cand.inLimit ? "(в регламенте 15 мин)" : "⚠ ВНЕ РЕГЛАМЕНТА 15 МИН") +
+      " · маршрут " + cand.path.map(n => NODES[n].n).join(" → "));
+
+  if (!cand.inLimit){
+    bot("alert","Эскалация начальнику смены",
+        "Ни один специалист профиля «" + QUALS[DEFECTS[call.defect].q].n +
+        "» не укладывается в 15 минут. Требуется решение о привлечении смежной бригады " +
+        "или переносе готовности борта.");
+  }
+
+  // Требование задания: уведомлять о ВС поблизости, чтобы совместить работы.
+  const near = st.calls.filter(c => c.open && c.id !== call.id &&
+                distM(call.stand, c.stand) <= 320);
+  for (const nc of near){
+    bot("near","Рядом открытая заявка",
+        NODES[nc.stand].n + " в " + Math.round(distM(call.stand, nc.stand)) +
+        " м от вашей точки: " + DEFECTS[nc.defect].n + ". Возможно совмещение выездов.");
+  }
+  if (!quiet) render();
+}
+
+function bot(kind, title, text, rt){
+  st.log.unshift({kind, title, text, rt, at:"T+" + String(st.t).padStart(2,"0")});
+  if (st.log.length > 40) st.log.pop();
+}
+
+/* ============================================================================
+   6. ОТРИСОВКА КАРТЫ
+   ========================================================================== */
+
+const SVGNS = "http://www.w3.org/2000/svg";
+function el(tag, attrs, text){
+  const n = document.createElementNS(SVGNS, tag);
+  for (const k in attrs) n.setAttribute(k, attrs[k]);
+  if (text != null) n.textContent = text;
+  return n;
+}
+
+function drawMap(){
+  const svg = document.getElementById("map");
+  svg.textContent = "";
+
+  // Перрон и терминал.
+  svg.appendChild(el("rect",{x:20,y:120,width:1160,height:400,fill:"var(--apron)",rx:6}));
+  svg.appendChild(el("rect",{x:60,y:30,width:1080,height:74,fill:"var(--surface-2)",
+    stroke:"var(--line)","stroke-width":2,rx:5}));
+  svg.appendChild(el("text",{x:80,y:66,"font-size":21,"font-weight":600,
+    "font-family":"IBM Plex Sans Condensed, sans-serif",fill:"var(--ink-2)"},
+    "ТЕРМИНАЛ B · ЗАПАДНЫЙ СЕКТОР"));
+  svg.appendChild(el("text",{x:80,y:88,"font-size":11.5,
+    "font-family":"IBM Plex Mono, monospace",fill:"var(--ink-3)"},
+    "МС 201–207 · Шереметьево-Перрон 4 · 134,550 МГц · ARP N55 58.4 E037 24.8 · ELEV 192 м"));
+
+  // Рулёжные дорожки западного сектора по карте 20-9B: L4 вдоль линии стоянок,
+  // N2 / N3 и L7 / L8 как связки, магистральная РД B — выход на ВПП 06C/24C.
+  // В граф персонала не входят: по ним перемещаются ВС, а не люди.
+  for (const [x,name] of [[200,"N2"],[560,"L7"],[880,"L8"],[1030,"N3"]]){
+    svg.appendChild(el("line",{x1:x,y1:520,x2:x,y2:634,stroke:"var(--road)",
+      "stroke-width":15,"stroke-linecap":"round"}));
+    svg.appendChild(el("text",{x:x+13,y:562,"font-size":12,"font-weight":600,
+      "font-family":"IBM Plex Mono, monospace",fill:"var(--ink-3)"},name));
+  }
+  svg.appendChild(el("rect",{x:0,y:620,width:1200,height:24,fill:"var(--road)"}));
+  svg.appendChild(el("text",{x:24,y:613,"font-size":12,"font-weight":600,
+    "font-family":"IBM Plex Mono, monospace",fill:"var(--ink-3)"},"РД L4"));
+  svg.appendChild(el("rect",{x:0,y:692,width:1200,height:46,fill:"var(--road)"}));
+  svg.appendChild(el("line",{x1:30,y1:715,x2:1170,y2:715,stroke:"var(--surface)",
+    "stroke-width":2.5,"stroke-dasharray":"36 28",opacity:.85}));
+  svg.appendChild(el("text",{x:24,y:683,"font-size":12.5,"font-weight":600,
+    "font-family":"IBM Plex Mono, monospace",fill:"var(--ink-3)"},
+    "магистральная РД B · выход на ВПП 06C / 24C (3550 × 60 м, бетон)"));
+
+  // Разметка проездов.
+  for (const [a,b] of EDGES){
+    svg.appendChild(el("line",{x1:NODES[a].x,y1:NODES[a].y,x2:NODES[b].x,y2:NODES[b].y,
+      stroke:"var(--road)","stroke-width":9,"stroke-linecap":"round"}));
+    svg.appendChild(el("line",{x1:NODES[a].x,y1:NODES[a].y,x2:NODES[b].x,y2:NODES[b].y,
+      stroke:"var(--marking)","stroke-width":1.4,"stroke-dasharray":"9 11",opacity:.75}));
+  }
+
+  // Маршрут последнего назначения — поверх разметки.
+  const ap = lastSolve && lastSolve.pick ? lastSolve.pick.path : null;
+  if (ap && ap.length > 1){
+    const pts = ap.map(n => NODES[n].x + "," + NODES[n].y).join(" ");
+    svg.appendChild(el("polyline",{points:pts,fill:"none",stroke:"var(--route)",
+      "stroke-width":6,"stroke-linejoin":"round","stroke-linecap":"round",opacity:.9}));
+    svg.appendChild(el("polyline",{points:pts,fill:"none",stroke:"var(--surface)",
+      "stroke-width":2,"stroke-dasharray":"2 10","stroke-linecap":"round"}));
+  }
+
+  // Узлы графа.
+  for (const id in NODES){
+    const nd = NODES[id];
+    const g = el("g",{class:"node",style:"cursor:pointer"});
+    g.addEventListener("click", () => onNodeClick(id));
+
+    if (nd.t === "stand"){
+      const isTarget = lastSolve && lastSolve.call.stand === id;
+      const hasOpen = st.calls.some(c => c.open && c.stand === id);
+      g.appendChild(el("rect",{x:nd.x-52,y:nd.y-40,width:104,height:66,rx:7,
+        fill:"var(--surface)",stroke:isTarget?"var(--crit)":(hasOpen?"var(--warn)":"var(--line)"),
+        "stroke-width":isTarget?3:1.5}));
+      // Силуэт ВС.
+      g.appendChild(el("path",{d:"M "+nd.x+" "+(nd.y-31)+" l 5 14 l 26 9 l 0 6 l -26 -4 l 0 12 "+
+        "l 9 7 l 0 4 l -14 -3 l -14 3 l 0 -4 l 9 -7 l 0 -12 l -26 4 l 0 -6 l 26 -9 z",
+        fill:isTarget?"var(--crit)":"var(--ink-3)",opacity:isTarget?.95:.55}));
+      g.appendChild(el("text",{x:nd.x,y:nd.y+19,"text-anchor":"middle","font-size":12.5,
+        "font-weight":600,fill:"var(--ink)"},nd.n));
+      g.appendChild(el("text",{x:nd.x,y:nd.y+37,"text-anchor":"middle","font-size":10.5,
+        "font-family":"IBM Plex Mono, monospace",fill:"var(--ink-3)"},nd.ac));
+    } else if (nd.t === "obj"){
+      g.appendChild(el("rect",{x:nd.x-58,y:nd.y-17,width:116,height:34,rx:6,
+        fill:"var(--surface)",stroke:"var(--line)","stroke-width":1.5}));
+      g.appendChild(el("text",{x:nd.x,y:nd.y+4,"text-anchor":"middle","font-size":11.5,
+        "font-weight":600,fill:"var(--ink-2)"},nd.n));
+    } else {
+      g.appendChild(el("circle",{cx:nd.x,cy:nd.y,r:6,fill:"var(--surface)",
+        stroke:"var(--road)","stroke-width":2.5}));
+    }
+    svg.appendChild(g);
+  }
+
+  // Перронные автомобили.
+  st.veh.forEach((v,i) => {
+    const nd = NODES[v.node], off = 26 + i*4;
+    const g = el("g",{});
+    g.appendChild(el("rect",{x:nd.x+off,y:nd.y-30,width:20,height:14,rx:3,
+      fill:v.free?"var(--ink-3)":"var(--line)",stroke:"var(--surface)","stroke-width":1.5}));
+    g.appendChild(el("title",{},v.n + (v.free ? " · свободен" : " · занят")));
+    svg.appendChild(g);
+  });
+
+  // Сотрудники: раскладываем веером вокруг своего узла, чтобы не слипались.
+  const byNode = {};
+  st.staff.forEach(e => (byNode[e.node] = byNode[e.node] || []).push(e));
+  for (const nid in byNode){
+    const list = byNode[nid], nd = NODES[nid];
+    list.forEach((e,i) => {
+      const a = -Math.PI/2 + (i - (list.length-1)/2) * 0.62;
+      const R = 40, cx = nd.x + Math.cos(a)*R, cy = nd.y + Math.sin(a)*R + (nd.t==="stand"?-14:0);
+      const picked = lastSolve && lastSolve.pick && lastSolve.pick.emp.id === e.id;
+      const g = el("g",{style:"cursor:pointer"});
+      g.addEventListener("click", ev => { ev.stopPropagation(); selectStaff(e.id); });
+      if (picked) g.appendChild(el("circle",{cx,cy,r:17,fill:"var(--route)",opacity:.22}));
+      g.appendChild(el("circle",{cx,cy,r:11,
+        fill:"var(--q-"+e.q.toLowerCase()+")",
+        stroke: sel===e.id ? "var(--ink)" : "var(--surface)",
+        "stroke-width": sel===e.id ? 3 : 2.5,
+        opacity: e.busy>0 ? .45 : 1}));
+      g.appendChild(el("text",{x:cx,y:cy+4,"text-anchor":"middle","font-size":9.5,
+        "font-weight":700,fill:"#fff","font-family":"IBM Plex Mono, monospace",
+        "pointer-events":"none"}, QUALS[e.q].s));
+      g.appendChild(el("title",{}, e.fio + " · " + QUALS[e.q].n +
+        (e.busy>0 ? " · занят ещё " + e.busy + " мин" : " · свободен")));
+      svg.appendChild(g);
+    });
+  }
+}
+
+function onNodeClick(id){
+  if (!sel) return;
+  const e = st.staff.find(x => x.id === sel);
+  e.node = id;
+  bot("system","Ручное изменение состояния", e.fio + " перемещён в точку «" + NODES[id].n + "».");
+  if (selCall && selCall.open) runSolve(selCall);
+  render();
+}
+function selectStaff(id){
+  sel = (sel === id) ? null : id;
+  render();
+}
+
+/* ============================================================================
+   7. ОТРИСОВКА ПАНЕЛЕЙ
+   ========================================================================== */
+
+const $ = s => document.querySelector(s);
+const fmt = m => m.toFixed(1).replace(".", ",");
+
+function render(){
+  drawMap();
+
+  $("#s-free").textContent = st.staff.filter(e => e.busy === 0).length + " / " + st.staff.length;
+  $("#s-open").textContent = st.calls.filter(c => c.open).length;
+  $("#s-calc").textContent = lastMs ? lastMs.toFixed(1) + " мс" : "—";
+  $("#v-calc").textContent = lastMs ? lastMs.toFixed(1) + " мс" : "";
+
+  const e = sel && st.staff.find(x => x.id === sel);
+  $("#sel-info").textContent = e
+    ? e.fio + " — " + QUALS[e.q].n + (e.busy ? " · занят " + e.busy + " мин" : " · свободен")
+    : "Сотрудник не выбран";
+
+  renderCalls(); renderVerdict(); renderCmp(); renderCands(); renderBot();
+}
+
+function renderCalls(){
+  const box = $("#calls");
+  box.textContent = "";
+  if (!st.calls.length){
+    box.innerHTML = '<div class="empty">Вызовов нет. Зафиксируйте вызов или загрузите сценарий.</div>';
+    return;
+  }
+  [...st.calls].reverse().forEach(c => {
+    const d = DEFECTS[c.defect];
+    const div = document.createElement("div");
+    div.className = "call";
+    div.setAttribute("aria-selected", selCall && selCall.id === c.id ? "true" : "false");
+    div.innerHTML =
+      '<div class="r1"><span>№' + c.id + ' · ' + NODES[c.stand].n + '</span>' +
+      '<span class="mono" style="color:var(--ink-3)">' + c.at + '</span></div>' +
+      '<div class="r2">' + d.n + ' · ' + d.ata + '</div>' +
+      '<div class="r3"><span class="pill q q-' + d.q + '">' + QUALS[d.q].s + '</span>' +
+      '<span class="pill ' + (c.prio === "A" ? "crit" : "warn") + '">приоритет ' + c.prio + '</span>' +
+      (c.assigned
+        ? '<span class="pill ' + (c.assigned.inLimit ? "ok" : "crit") + '">' +
+          c.assigned.fio + ' · ' + fmt(c.assigned.eta) + ' мин</span>'
+        : '<span class="pill">не назначен</span>') + '</div>';
+    div.addEventListener("click", () => { selCall = c; runSolve(c); render(); });
+    box.appendChild(div);
+  });
+}
+
+function renderVerdict(){
+  const box = $("#verdict");
+  if (!lastSolve || !lastSolve.pick){
+    box.innerHTML = '<div class="body"><div class="empty">Зафиксируйте вызов или запустите сценарий.</div></div>';
+    return;
+  }
+  const p = lastSolve.pick, c = lastSolve.call, d = DEFECTS[c.defect];
+  const alt = lastSolve.cands.filter(x => x.emp.id !== p.emp.id && x.inLimit).length;
+  box.innerHTML =
+    '<div class="verdict' + (p.inLimit ? "" : " bad") + '">' +
+      '<div class="who">' + p.emp.fio + '</div>' +
+      '<div class="eta">' + fmt(p.minutes) + ' мин</div>' +
+      '<div class="meta">' + (p.inLimit
+        ? "Регламент 15 мин выполняется · запас " + fmt(LIMIT - p.minutes) + " мин"
+        : "⚠ Регламент 15 мин НЕ выполняется · превышение " + fmt(p.minutes - LIMIT) + " мин, направлена эскалация") +
+      '</div></div>' +
+    '<div class="body"><dl class="kv">' +
+      '<dt>Борт</dt><dd>' + NODES[c.stand].ac + '</dd>' +
+      '<dt>Неисправность</dt><dd>' + d.ata + '</dd>' +
+      '<dt>Квалификация</dt><dd>' + QUALS[d.q].s + ' — ' + QUALS[d.q].n + '</dd>' +
+      '<dt>Способ</dt><dd>' + p.mode + '</dd>' +
+      '<dt>Длина маршрута</dt><dd>' + Math.round(p.dist) + ' м</dd>' +
+      (d.kit ? '<dt>Спецкомплект</dt><dd>через склад, +' + fmt(KIT_TIME) + ' мин</dd>' : '') +
+      (p.busyAt ? '<dt>Освободится</dt><dd>через ' + p.busyAt + ' мин</dd>' : '') +
+      '<dt>Резерв</dt><dd>' + alt + ' кандидат(ов) в регламенте</dd>' +
+    '</dl>' +
+    '<div class="btnrow"><button class="primary" id="b-assign"' +
+      (c.open ? '' : ' disabled') + '>' +
+      (c.open ? 'Подтвердить назначение' : 'Назначение подтверждено') + '</button></div></div>';
+
+  const b = $("#b-assign");
+  if (b && c.open) b.addEventListener("click", () => assign(c, p));
+}
+
+function renderCmp(){
+  const box = $("#cmp");
+  if (!lastSolve || !lastSolve.pick || !lastSolve.naive){
+    box.innerHTML = '<div class="body"><div class="empty">Нет данных.</div></div>';
+    return;
+  }
+  const p = lastSolve.pick, n = lastSolve.naive;
+  const gain = Math.round((n.minutes - p.minutes)*10)/10;
+  const same = n.emp.id === p.emp.id;
+  box.innerHTML =
+    '<div class="cmp">' +
+      '<div><div class="lbl">Интуитивный выбор</div><div class="nm">' + n.emp.fio + '</div>' +
+      '<div class="t" style="color:' + (n.inLimit ? "var(--ink)" : "var(--crit)") + '">' +
+        fmt(n.minutes) + '</div><div class="lbl">минут фактически</div></div>' +
+      '<div><div class="lbl">Выбор системы</div><div class="nm">' + p.emp.fio + '</div>' +
+      '<div class="t" style="color:var(--ok)">' + fmt(p.minutes) + '</div>' +
+      '<div class="lbl">минут фактически</div></div>' +
+    '</div>' +
+    '<div class="gain">' + (same
+      ? "Решения совпали: визуально ближайший специалист действительно оптимален. Система подтверждает выбор диспетчера."
+      : "Выигрыш <b>" + fmt(gain) + " мин</b>. Диспетчер выбрал бы ближайшего по прямой, не учитывая " +
+        (n.busyAt ? "его занятость (" + n.busyAt + " мин) и " : "") + "реальные проезды перрона." +
+        (n.inLimit ? "" : " Этот выбор нарушил бы регламент 15 минут.")) +
+    '</div>';
+}
+
+function renderCands(){
+  const t = $("#cand");
+  if (!lastSolve){ t.innerHTML = '<tbody><tr><td class="empty">Нет данных.</td></tr></tbody>'; return; }
+  let h = '<thead><tr><th>Сотрудник</th><th>Статус</th><th>Путь</th><th>Прибытие</th></tr></thead><tbody>';
+  for (const c of lastSolve.cands){
+    const isPick = lastSolve.pick && c.emp.id === lastSolve.pick.emp.id;
+    h += '<tr class="' + (isPick ? "pick" : (c.inLimit ? "" : "over")) + '">' +
+      '<td>' + c.emp.fio + (isPick ? ' <span class="pill ok">выбран</span>' : '') + '</td>' +
+      '<td>' + (c.busyAt ? '<span class="pill warn">занят ' + c.busyAt + ' мин</span>'
+                         : '<span class="pill ok">свободен</span>') + '</td>' +
+      '<td class="num">' + Math.round(c.dist) + ' м</td>' +
+      '<td class="num" style="color:' + (c.inLimit ? "var(--ok)" : "var(--crit)") + ';font-weight:600">' +
+        fmt(c.minutes) + '</td></tr>';
+  }
+  t.innerHTML = h + '</tbody>';
+}
+
+function renderBot(){
+  const box = $("#bot");
+  box.textContent = "";
+  if (!st.log.length){
+    box.innerHTML = '<div class="empty">Сообщений нет.</div>';
+    return;
+  }
+  for (const m of st.log){
+    const d = document.createElement("div");
+    d.className = "msg " + m.kind;
+    d.innerHTML = '<div class="hd"><span>' + m.title + '</span><span class="mono">' + m.at + '</span></div>' +
+                  '<div>' + m.text + '</div>' + (m.rt ? '<div class="rt">' + m.rt + '</div>' : '');
+    box.appendChild(d);
+  }
+}
+
+/* ============================================================================
+   8. ПРОГОН КОНТРОЛЬНЫХ ТЕСТОВ
+   ========================================================================== */
+
+function runAll(){
+  testRows = [];
+  for (const s of SCENARIOS){
+    st = freshState();
+    for (const id in s.patch) Object.assign(st.staff.find(e => e.id === id), s.patch[id]);
+    for (const [stand,defect,prio] of s.calls){
+      const c = addCall(stand, defect, prio, true);
+      const t0 = performance.now();
+      const r = solve(c, st);
+      const ms = performance.now() - t0;
+      if (!r.pick) continue;
+      testRows.push({
+        scn:s.id, scnName:s.n, stand:NODES[stand].n, defect:DEFECTS[defect].n,
+        ata:DEFECTS[defect].ata, qual:QUALS[DEFECTS[defect].q].s, qkey:DEFECTS[defect].q, prio,
+        sys:r.pick.emp.fio, sysEta:r.pick.minutes, mode:r.pick.mode,
+        naive:r.naive ? r.naive.emp.fio : "—",
+        naiveEta:r.naive ? r.naive.minutes : null,
+        gain:r.naive ? Math.round((r.naive.minutes - r.pick.minutes)*10)/10 : 0,
+        inLimit:r.pick.inLimit, ms:Math.round(ms*100)/100
+      });
+      assign(c, r.pick, true);
+    }
+  }
+  renderTests();
+  applyScenario(SCENARIOS[0]);
+}
+
+function renderTests(){
+  const ok = testRows.filter(r => r.inLimit).length;
+  const ms = testRows.map(r => r.ms).sort((a,b) => a-b);
+  const med = ms.length ? ms[Math.floor(ms.length/2)] : 0;
+  const gain = Math.round(testRows.reduce((s,r) => s + Math.max(0,r.gain), 0)*10)/10;
+
+  $("#t-scn").textContent = SCENARIOS.length;
+  $("#t-asg").textContent = testRows.length;
+  $("#t-ok").textContent  = ok + " / " + testRows.length;
+  $("#t-med").textContent = med.toFixed(2) + " мс";
+  $("#t-max").textContent = (ms.length ? Math.max(...ms) : 0).toFixed(2) + " мс";
+  $("#t-gain").textContent = fmt(gain) + " мин";
+
+  let h = '<thead><tr><th>№</th><th>Сценарий</th><th>Стоянка</th><th>Неисправность</th>' +
+          '<th>Проф.</th><th>Выбор системы</th><th>Прибытие</th><th>Способ</th>' +
+          '<th>Интуитивный выбор</th><th>Прибытие</th><th>Выигрыш</th><th>Регламент</th>' +
+          '<th>Расчёт</th></tr></thead><tbody>';
+  for (const r of testRows){
+    h += '<tr>' +
+      '<td class="num">' + r.scn + '</td><td>' + r.scnName + '</td><td>' + r.stand + '</td>' +
+      '<td>' + r.defect + '<br><span class="mono" style="color:var(--ink-3)">' + r.ata + '</span></td>' +
+      '<td><span class="pill q q-' + r.qkey + '">' + r.qual + '</span></td>' +
+      '<td>' + r.sys + '</td>' +
+      '<td class="num" style="font-weight:600;color:' + (r.inLimit ? "var(--ok)" : "var(--crit)") + '">' + fmt(r.sysEta) + '</td>' +
+      '<td>' + r.mode + '</td>' +
+      '<td>' + r.naive + '</td>' +
+      '<td class="num">' + (r.naiveEta != null ? fmt(r.naiveEta) : "—") + '</td>' +
+      '<td class="num" style="font-weight:600">' + (r.gain > 0 ? "−" + fmt(r.gain) : "0,0") + '</td>' +
+      '<td><span class="pill ' + (r.inLimit ? "ok" : "crit") + '">' + (r.inLimit ? "да" : "нарушен") + '</span></td>' +
+      '<td class="num">' + r.ms.toFixed(2) + ' мс</td></tr>';
+  }
+  $("#testtable").innerHTML = h + '</tbody>';
+  $("#raw").value = JSON.stringify({
+    model:{walk_m_min:WALK, drive_m_min:DRIVE, veh_overhead_min:VEH_OVERHEAD,
+           prep_min:PREP, kit_min:KIT_TIME, limit_min:LIMIT},
+    runs:testRows
+  }, null, 2);
+}
+
+/* ============================================================================
+   9. ИНИЦИАЛИЗАЦИЯ
+   ========================================================================== */
+
+function initForm(){
+  const s = $("#f-stand"), d = $("#f-defect");
+  for (const id in NODES) if (NODES[id].t === "stand")
+    s.appendChild(new Option(NODES[id].n + " — " + NODES[id].ac, id));
+  for (const k in DEFECTS)
+    d.appendChild(new Option(DEFECTS[k].n + " (" + DEFECTS[k].ata + ")", k));
+  s.value = "ST4"; d.value = "ELE";
+
+  $("#b-add").addEventListener("click", () => {
+    const c = addCall(s.value, d.value, $("#f-prio").value);
+    runSolve(c); render();
+  });
+  $("#b-reset").addEventListener("click", () => {
+    st = freshState(); sel = null; selCall = null; lastSolve = null; lastMs = 0;
+    bot("system","Смена сброшена","Состояние бригады и перронного транспорта возвращено к исходному.");
+    render();
+  });
+  $("#b-runall").addEventListener("click", runAll);
+  $("#b-raw").addEventListener("click", () => {
+    const box = $("#rawbox"); box.hidden = !box.hidden;
+    $("#b-raw").textContent = box.hidden ? "Показать протокол в JSON" : "Скрыть протокол";
+    if (!box.hidden) $("#raw").select();
+  });
+
+  const scn = $("#scn");
+  for (const sc of SCENARIOS){
+    const b = document.createElement("button");
+    b.innerHTML = '<span class="n">' + sc.id + '</span><span class="t">' + sc.n +
+                  '<em>' + sc.d + '</em></span>';
+    b.addEventListener("click", () => applyScenario(sc));
+    scn.appendChild(b);
+  }
+}
+
+st = freshState();
+initForm();
+runAll();                       // страница открывается в рабочем состоянии
+</script>

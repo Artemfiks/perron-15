@@ -1,0 +1,22 @@
+services:
+  - type: web
+    name: perron-15-live
+    runtime: node
+    plan: free
+    rootDir: live
+    buildCommand: node --check server.mjs
+    startCommand: node server.mjs
+    healthCheckPath: /
+    envVars:
+      - key: NODE_VERSION
+        value: "24"
+      - key: HOST
+        value: "0.0.0.0"
+      - key: TRUST_HTTPS_PROXY
+        value: "yes"
+      - key: DISPATCH_CODE
+        generateValue: true
+      - key: ENGINEER_ONE_CODE
+        generateValue: true
+      - key: ENGINEER_TWO_CODE
+        generateValue: true
