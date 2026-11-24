@@ -26,6 +26,19 @@ test('Смена через HTTP: две роли инженера, два AOG, 
  const gps=(obj,i)=>{const vertices=zones[i].geometry.coordinates[0][0].slice(0,-1);return {obj,lon:vertices.reduce((s,p)=>s+p[0],0)/vertices.length,lat:vertices.reduce((s,p)=>s+p[1],0)/vertices.length,acc:4}};
  try{
   await start();let d=await login('dispatcher','test-d');const a=await login('engineer','test-a'),b=await login('engineer','test-b');
+  const pairPhone=await req('background-key',a,{});
+  const report=async data=>fetch(base+'/api/owntracks',{method:'POST',headers:{'content-type':'application/json',authorization:'Basic '+Buffer.from(pairPhone.username+':'+pairPhone.password).toString('base64')},body:JSON.stringify(data)});
+  const location={_type:'location',...gps('e-02',1),tst:Math.floor(Date.now()/1000)};
+  assert.deepEqual(await (await report(location)).json(),[]);
+  const visible=await req('agents',d);
+  assert(visible.find(a=>a.obj==='e-01').point);
+  assert.equal(visible.find(a=>a.obj==='e-02').point,undefined);
+  assert.equal((await report({...location,acc:null})).status,400);
+  await req('point',a,{stop:true});
+  await report({...location,tst:location.tst-90});
+  assert.equal((await req('agents',d)).find(a=>a.obj==='e-01').point,undefined);
+  await req('background-key',a,{revoke:true});assert.equal((await report(location)).status,401);
+  assert.deepEqual(await req('roads',a),[]);await req('roads',a,{ids:[]},403);
   await req('v1/track','feed',{obj:'e-01',lat:'bad'},400);
   assert.equal((await req('v1/track','feed',gps('unknown',1))).applied,false);
   const rows=await req('v1/track','feed',{points:['e-01','e-02','v-01','RA-73142'].map(o=>gps(o,1))});assert(rows.every(r=>r.applied));

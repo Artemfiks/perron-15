@@ -1,9 +1,10 @@
 import {network,xy,center} from './route.js';
 import config from './site.json' with {type:'json'};
+import {forbiddenObjects} from './access.mjs';
 import {insideZone} from './lifecycle.mjs';
 export function planner(roads,zones,objects,agents,points,jobs){
  let closed=[],walk,drive;
- const barriers=objects.filter(f=>f.properties.forbidden===true||config.blockedObjects.includes(f.properties.id));
+ const barriers=forbiddenObjects(objects,config.blockedObjects);
  function close(ids){closed=[...new Set(ids)];walk=network(roads,'walk',closed,barriers);drive=network(roads,'drive',closed,barriers)}
  close([]);
  const destinations=new Map(zones.map(z=>[z.properties.id,center(z)]));

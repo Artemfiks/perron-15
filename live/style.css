@@ -3,3 +3,7 @@
 #call-form input[type=text]{display:block;width:100%;font:inherit;border:1px solid #92a9b5;border-radius:6px;padding:10px;margin:6px 0}
 #call-form select,#call-form input{margin-bottom:12px}
 #call-detail{overflow-wrap:anywhere}
+
+.mapfocus{display:flex;align-items:center;gap:12px;padding:0 18px 10px;font-size:.9rem}.mapfocus select{flex:1;min-width:0}
+.legend{flex-wrap:wrap;column-gap:18px;row-gap:6px}.legend span{display:inline-flex;align-items:center;gap:6px}.legend span::before{content:"";width:18px;height:5px;background:#176b87}.legend .forbid::before{height:12px;background:repeating-linear-gradient(135deg,#ffe1d8 0 3px,#bc4639 3px 5px);border:1px solid #a83229}.legend .allowed::before{background:#278257}.legend .closed::before{background:none;border-top:3px dashed #624956;height:0}.legend .position::before{border:1px dashed #415e72;border-radius:50%;width:12px;height:12px;background:radial-gradient(#415e72 25%,#e3ebee 30%)}.legend .dest::before{border-radius:50%;width:12px;height:12px;background:#edb02c}
+#positions{padding:0 18px 14px}.positionrow{border-left:4px solid;padding:5px 10px;margin:6px 0;background:#f4f7f7}.positionrow span,.positionrow small{display:block}.positionrow small{letter-spacing:0;font-weight:400}.native-settings{margin-top:16px}.native-settings p{overflow-wrap:anywhere}.native-settings input{width:100%}

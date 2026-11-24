@@ -66,6 +66,7 @@ export function network(roads,mode='walk',closed=[],barriers=[]) {
     const meters=full.slice(1).reduce((sum,p,i)=>sum+distance(p,full[i]),0);
     return {meters,minutes:len+(s.gap+e.gap)/(5000/60),path:full};
   }
+  route.segments=edges.map(([a,b])=>[nodes[a],nodes[b]]);
   route.canJoin=p=>!!snap(p);
   return route;
 }

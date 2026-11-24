@@ -1,4 +1,5 @@
-import {xy,setOrigin,center} from './route.js';
+import {forbiddenObjects,positionStatus} from './access.mjs';
+import {network,xy,setOrigin,center} from './route.js';
 import {aircraft,defects,priorities,describe} from './calls.mjs';
 import {labels} from './lifecycle.mjs';
 let activeJob;
@@ -19,7 +20,8 @@ async function load(user){
  {
    const layers=await Promise.all(['roads','service_zones','objects','airport_boundaries'].map(async n=>(await fetch('/data/'+n)).json()));
    geo={roads:layers[0],zones:layers[1].features,objects:layers[2].features,bounds:layers[3].features};
-   setOrigin(layers[3]);document.querySelector('.maphead span').textContent=geo.zones.length+' зон';document.querySelector('.maphead h2').textContent=(await (await fetch('/site.json')).json()).name;
+   const site=await (await fetch('/site.json')).json();geo.barriers=forbiddenObjects(geo.objects,site.blockedObjects);
+   setOrigin(layers[3]);document.querySelector('.maphead span').textContent=geo.zones.length+' зон';document.querySelector('.maphead h2').textContent=site.name;
    if(user.role==='engineer')el('engineer').append(document.querySelector('.mapbox'));
    for(const model of aircraft)el('aircraft').add(new Option(model,model));
    Object.assign(defects,await api('catalog'));filterDefects();
@@ -59,22 +61,71 @@ function shape(tag,attrs,label){
  if(label)n.textContent=label;el('map').append(n);return n;
 }
 const points=coords=>coords.map(p=>p.join(',')).join(' ');
+function updateRoads(closed){
+ const key=JSON.stringify(closed);
+ if(geo.closureKey===key)return;
+ geo.closureKey=key;geo.closed=closed;
+ geo.walk=network(geo.roads,'walk',closed,geo.barriers);
+}
+let lastMap;
+el('focus').onchange=()=>{if(lastMap)draw(...lastMap)};
 function draw(team,zone){
- el('map').replaceChildren();
- function area(f,fill){for(const poly of f.geometry.coordinates)shape('polygon',{points:points(poly[0].map(xy)),fill,stroke:'#9aacb2','stroke-width':2});}
- geo.bounds.forEach(f=>area(f,'#f6f7ef'));geo.objects.forEach(f=>area(f,'#c6d3d8'));
- const all=geo.bounds.flatMap(f=>f.geometry.coordinates.flat(2).map(xy)),xs=all.map(p=>p[0]),ys=all.map(p=>p[1]);
- el('map').setAttribute('viewBox',[Math.min(...xs)-70,Math.min(...ys)-70,Math.max(...xs)-Math.min(...xs)+140,Math.max(...ys)-Math.min(...ys)+140].join(' '));
- for(const road of geo.roads.features)shape('polyline',{points:points(road.geometry.coordinates.map(xy)),fill:'none',stroke:['service','pedestrian'].includes(road.properties.type)?'#9eb0b5':'#d1dadd','stroke-width':3});
- if(best)shape('polyline',{points:points(best.route.path),fill:'none',stroke:'#176b87','stroke-width':12,'stroke-linejoin':'round'});
- for(const t of team)if(t.job?.route&&!t.job.arrivedAt)shape('polyline',{points:points(t.job.route.path),fill:'none',stroke:'#176b87','stroke-width':9,'stroke-linejoin':'round'});
- for(const f of geo.objects){const [x,y]=center(f);shape('text',{x,y,'font-size':19,'text-anchor':'middle'},f.properties.name)}
- for(const z of geo.zones){
-  const [x,y]=center(z);shape('circle',{cx:x,cy:y,r:22,fill:z===zone?'#edb02c':'#fff',stroke:'#7a919c','stroke-width':2});
-  shape('text',{x,y:y+8,'font-size':23,'text-anchor':'middle'},String(z.properties.id));
+ lastMap=[team,zone];
+ const map=el('map'),focus=el('focus'),engineers=team.filter(t=>t.kind==='engineer');
+ const selected=focus.value;
+ if([...focus.options].slice(1).map(o=>o.value).join('|')!==engineers.map(t=>t.obj).join('|')){
+  focus.replaceChildren(new Option('Весь полигон',''),...engineers.map(t=>new Option(t.id,t.obj)));
+  focus.value=selected || (account.role==='engineer'?account.obj:'');
  }
- for(const t of team)if(t.point && Date.now()-t.point.time<=60000){
-  const [x,y]=xy([t.point.lon,t.point.lat]);shape('circle',{cx:x,cy:y,r:13,fill:({aircraft:'#aa3b46',vehicle:'#305b99'})[t.kind]||'#168262',stroke:'white','stroke-width':3});if(t.id)shape('text',{x:x+16,y,'font-size':20},t.id);
+ map.replaceChildren();
+ const hatch=shape('pattern',{id:'restricted',patternUnits:'userSpaceOnUse',width:12,height:12});
+ hatch.append(shape('rect',{width:12,height:12,fill:'#ffe1d8'}),shape('path',{d:'M-2 2L2 -2M0 12L12 0M10 14L14 10',stroke:'#c65b47','stroke-width':2}));
+ const defs=shape('defs',{});defs.append(hatch);
+ function area(f,fill,stroke,width){
+  const d=f.geometry.coordinates.flatMap(poly=>poly.map(ring=>'M'+ring.map(p=>xy(p).join(',')).join('L')+'Z')).join(' ');
+  shape('path',{d,fill,stroke,'fill-rule':'evenodd','stroke-width':width});
+ }
+ geo.bounds.forEach(f=>area(f,'#fbfaf0','#85989c',2));
+ geo.objects.filter(f=>!geo.barriers.includes(f)).forEach(f=>area(f,'#d7dfe1','#9daeb2',2));
+ for(const road of geo.roads.features){
+  const closed=geo.closed.includes(road.properties.id);
+  shape('polyline',{points:points(road.geometry.coordinates.map(xy)),fill:'none',stroke:closed?'#624956':'#c9d1cf','stroke-width':closed?4:2,'stroke-dasharray':closed?'8 6':'none'});
+ }
+ shape('path',{d:geo.walk.segments.map(([a,b])=>'M'+a+'L'+b).join(' '),fill:'none',stroke:'#278257','stroke-width':4,'stroke-linecap':'round'});
+ geo.barriers.forEach(f=>area(f,'url(#restricted)','#a83229',3));
+ if(best)shape('polyline',{points:points(best.route.path),fill:'none',stroke:'#176b87','stroke-width':7,'stroke-linejoin':'round'});
+ for(const t of team)if(t.job?.route&&!t.job.arrivedAt)shape('polyline',{points:points(t.job.route.path),fill:'none',stroke:'#176b87','stroke-width':7});
+ const focused=engineers.find(t=>t.obj===focus.value)?.point;
+ const zoom=focused&&Date.now()-focused.time<=60000;
+ const all=geo.bounds.flatMap(f=>f.geometry.coordinates.flat(2).map(xy)),xs=all.map(p=>p[0]),ys=all.map(p=>p[1]);
+ let box=[Math.min(...xs)-45,Math.min(...ys)-45,Math.max(...xs)-Math.min(...xs)+90,Math.max(...ys)-Math.min(...ys)+90];
+ if(zoom){const [x,y]=xy([focused.lon,focused.lat]);box=[x-140,y-140,280,280]}
+ map.setAttribute('viewBox',box.join(' '));
+ function label(x,y,title,size,anchor='middle'){
+  shape('text',{x,y,'font-size':size,'text-anchor':anchor,fill:'#19343d',stroke:'white','stroke-width':size/5,'paint-order':'stroke'},title);
+ }
+ for(const f of geo.objects){const [x,y]=center(f);label(x,y,f.properties.name,zoom?8:17)}
+ for(const z of geo.zones){
+  const [x,y]=center(z),r=zoom?6:16;shape('circle',{cx:x,cy:y,r,fill:z===zone?'#edb02c':'#fff',stroke:'#71828a','stroke-width':1.5});
+  label(x,y+r*.4,String(z.properties.id),r*1.1);
+ }
+ const colors={blocked:'#a92b24',uncertain:'#986000',unknown:'#596b76',outside:'#535867',open:'#145c40'};
+ el('positions').replaceChildren();
+ for(const t of team){
+  const p=t.point,isEngineer=t.kind==='engineer';
+  const info=isEngineer?positionStatus(p,geo.barriers,geo.bounds,geo.walk):null;
+  const color=info?colors[info.level]:(t.kind==='aircraft'?'#963c61':'#324e99');
+  if(isEngineer){
+   const row=document.createElement('div'),title=document.createElement('strong'),status=document.createElement('span');
+   row.className='positionrow';row.style.borderLeftColor=color;title.textContent=t.id;status.textContent=info.text;row.append(title,status);
+   if(p){const stamp=document.createElement('small');stamp.textContent='GPS '+new Date(p.time).toLocaleTimeString('ru')+' · ±'+Math.round(p.accuracy)+' м';row.append(stamp)}
+   el('positions').append(row);
+  }
+  if(!p||Date.now()-p.time>60000)continue;
+  const [x,y]=xy([p.lon,p.lat]),r=zoom?3.5:10;
+  if(isEngineer)shape('circle',{cx:x,cy:y,r:p.accuracy,fill:color,'fill-opacity':.12,stroke:color,'stroke-width':zoom?1:2,'stroke-dasharray':'3 3'});
+  shape('circle',{cx:x,cy:y,r,fill:color,stroke:'#fff','stroke-width':zoom?1:2});
+  label(x+r+2,y-r,t.id,zoom?7:17,'start');
  }
 }
 function timing(f){
@@ -85,7 +136,7 @@ async function refresh(prefer){
  const seq=++revision;
  try{
   if(account.role==='engineer'){
-   const [job,visible]=await Promise.all([api('job'),api('agents')]);if(seq!==revision)return;
+   const [job,visible,closed]=await Promise.all([api('job'),api('agents'),api('roads')]);if(seq!==revision)return;updateRoads(closed);
    activeJob=job;
    el('myjob').textContent=job?[describe(job),labels[job.status],job.arrivedAt?'Прибытие '+new Date(job.arrivedAt).toLocaleTimeString()+' · '+(job.inLimit?'в нормативе':'с опозданием'):job.route?'До зоны '+job.route.minutes.toFixed(1)+' мин':'Ожидание GPS'].join(' · '):'Ожидание назначения';
    if(job){el('myjob').textContent+=(job.kit?' · Комплект '+(job.kitCollected?'получен':'получить на складе'):'')+(job.route?' · '+job.route.mode:'')+(job.aircraftNear?' · Рядом ВС '+job.aircraftNear:'');}
@@ -105,7 +156,7 @@ async function refresh(prefer){
    for(const [action,title] of actions[job?.status]||[]){const btn=document.createElement('button');btn.textContent=title;btn.onclick=async()=>{btn.disabled=true;try{await api('action',{action,number:job.number});await refresh()}catch(e){notice(e.message)}};buttons.append(btn)}
    return;
   }
-  const [team,calls,agents,remarks]=await Promise.all([api('team'),api('calls'),api('agents'),api('remarks')]);if(seq!==revision)return;
+  const [team,calls,agents,remarks,closed]=await Promise.all([api('team'),api('calls'),api('agents'),api('remarks'),api('roads')]);if(seq!==revision)return;updateRoads(closed);
   const selected=el('remark').value;el('remark').replaceChildren(new Option('Регистрация вручную',''),...remarks.map(r=>new Option(r.author+' · '+r.note,r.id)));if(remarks.some(r=>r.id===selected))el('remark').value=selected;
   const picker=el('pending');
   const current=calls.find(c=>c.number===(prefer??Number(picker.value)))??calls[0];
@@ -184,3 +235,29 @@ control('GPS телефона в машине',async()=>{const obj=prompt('ID с
 control('Состав и допуски',async()=>{const obj=prompt('ID агента (например e-01, v-01 или RA-73142)');if(!obj)return;const kind=prompt('Тип: engineer, vehicle, aircraft','engineer');if(!kind)return;const at=kind==='engineer'?prompt('Главы ATA через запятую','79,34'):'';if(at===null)return;const models=kind==='engineer'?prompt('Типы ВС через запятую',aircraft.join(',')):null;if(kind==='engineer'&&models===null)return;const result=await api('roster',{obj,kind,models:models?.split(',').map(m=>m.trim()),ata:at.split(',').filter(Boolean).map(Number)});if(result.code)prompt('Код нового инженера',result.code);else notice('Параметры агента сохранены');});
 control('Закрытые дороги',async()=>{const ids=prompt('ID закрытых участков через запятую. Пустое поле открывает дороги',(await api('roads')).join(','));if(ids!==null){await api('roads',{ids:ids.split(',').map(v=>v.trim()).filter(Boolean).map(Number)});await refresh()}});
 
+
+let configUrl;
+function clearPair(){
+ if(configUrl)URL.revokeObjectURL(configUrl);
+ configUrl=null;el('native-file').removeAttribute('href');el('native-pass').value='';
+ el('native-pass').type='password';el('show-pass').textContent='Показать пароль';el('pair-info').hidden=true;
+}
+el('show-pass').onclick=()=>{
+ const hidden=el('native-pass').type==='password';el('native-pass').type=hidden?'text':'password';
+ el('show-pass').textContent=hidden?'Скрыть пароль':'Показать пароль';
+};
+el('pair').onclick=async()=>{
+ el('pair').disabled=true;
+ try{
+  const {username,password,until}=await api('background-key',{});clearPair();
+  const url=location.origin+'/api/owntracks';
+  const settings={_type:'configuration',mode:3,auth:true,url,username,password,monitoring:2,locatorDisplacement:5,locatorInterval:10,moveModeLocatorInterval:10};
+  configUrl=URL.createObjectURL(new Blob([JSON.stringify(settings)],{type:'application/json'}));
+  el('native-file').href=configUrl;el('native-url').value=url;el('native-user').value=username;el('native-pass').value=password;
+  el('pair-info').hidden=false;el('native-status').textContent='';
+  el('valid-until').textContent='Доступ до '+new Date(until).toLocaleString('ru')+' или до выхода из смены. Новый пароль заменяет предыдущий.';
+ }catch(e){notice(e.message)}finally{el('pair').disabled=false}
+};
+el('unpair').onclick=async()=>{
+ try{await api('background-key',{revoke:true});clearPair();el('native-status').textContent='Фоновый доступ телефона отключён.'}catch(e){notice(e.message)}
+};

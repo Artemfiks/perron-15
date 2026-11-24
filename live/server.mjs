@@ -115,6 +115,7 @@ if(saved){
 function log(kind,actor,c,detail={}){
  db.record(kind,actor,c,detail,{calls:[...history.values()],pending:[...pending.keys()],jobs:[...jobs].map(([id,j])=>[id,j.number]),closed:routing.closed,defects,agents,extraAccounts:[...extraAccounts],remarks:[...remarks.values()]});
 }
+const backgroundKeys=new Map();
 const attempts = new Map();
 const tls = process.env.TLS_CERT && process.env.TLS_KEY;
 const port = Number(process.env.PORT || (process.env.RENDER?10000:8175));
@@ -128,6 +129,7 @@ for (const [id,role] of [['Диспетчер','dispatcher'],['Инженер 1'
 }
 const files = new Map(Object.entries({
   '/':['index.html','text/html'], '/ui.js':['ui.js','text/javascript'],
+  '/access.mjs':['access.mjs','text/javascript'],
   '/route.js':['route.js','text/javascript'], '/style.css':['style.css','text/css'],
   '/scenarios':['scenarios.html','text/html'],
   '/calls.mjs':['calls.mjs','text/javascript'],
@@ -154,7 +156,7 @@ async function handle(req,res){
    if(req.headers['content-type']?.split(';')[0]!=='application/json') fail(415,'Ожидается JSON');
    const chunks=[];let bytes=0;for await(const chunk of req){bytes+=chunk.length;if(bytes>262144)fail(413,'Слишком большой запрос');chunks.push(chunk)}
    const raw=Buffer.concat(chunks).toString('utf8');
-   try{body=JSON.parse(raw);}catch{fail(400,'Ошибка данных');}
+   try{body=!raw&&path==='/api/owntracks'?{}:JSON.parse(raw);}catch{fail(400,'Ошибка данных');}
    if(!body || typeof body!=='object' || Array.isArray(body)) fail(400,'Ошибка данных');
  }
  if(path==='/api/login' && post){
@@ -167,6 +169,24 @@ async function handle(req,res){
    sessions.set(sid,{user:account,until:Date.now()+12*3600000});
    res.setHeader('Set-Cookie','shift='+sid+'; HttpOnly; SameSite=Strict; Path=/; Max-Age=43200'+(tls || process.env.TRUST_HTTPS_PROXY==='yes'?'; Secure':''));
    return send(account);
+ }
+ if(path==='/api/background-key'&&post&&user?.role==='engineer'){
+  if(body.revoke===true){backgroundKeys.delete(user.obj);return send({});}
+  const password=randomBytes(24).toString('hex');
+  backgroundKeys.set(user.obj,{hash:digest(password),until:session.until,session:token});
+  return send({username:user.obj,password,until:session.until});
+ }
+ if(path==='/api/owntracks'&&post){
+  const credential=req.headers.authorization||'';
+  const [obj,password]=credential.startsWith('Basic ')?Buffer.from(credential.slice(6),'base64').toString().split(':'):[];
+  const key=backgroundKeys.get(obj);
+  if(!key||key.until<=Date.now()||!password||digest(password)!==key.hash)fail(401,'Проверьте подключение телефона к смене');
+  if(body._type==='location'){
+   if(!Number.isSafeInteger(body.tst)||body.tst<=0||body.tst>8.64e12||!Number.isFinite(body.acc))fail(400,'Нужны время и точность GPS');
+   const stamp=body.tst*1000;
+   if(stamp>=Date.now()-60000)track({obj,lat:body.lat,lon:body.lon,acc:body.acc,t:new Date(stamp).toISOString()},agents,points,onPosition);
+  }
+  return send([]);
  }
  if(path==='/api/me' && !post)return send(user);
  if(path==='/api/track-key' && !post && user?.role==='dispatcher')return send({key:feedKey});
@@ -194,7 +214,7 @@ async function handle(req,res){
   if(body.models)a.models=body.models;
   a.ata=ata;log('roster',user.id,null,{obj,kind,ata});return send({obj,code});
  }
- if(path==='/api/roads'&&user?.role==='dispatcher'){
+ if(path==='/api/roads'&&user&&(!post||user.role==='dispatcher')){
   if(post){if(!Array.isArray(body.ids)||body.ids.some(i=>!roads.features.some(f=>f.properties.id===i)))fail(400,'Проверьте ID рёбер');routing.close(body.ids)}
   if(post)log('road-closures',user.id,null,{ids:routing.closed});
   return send(routing.closed);
@@ -206,7 +226,7 @@ async function handle(req,res){
  if(path.startsWith('/api/') || path.startsWith('/data/') || path==='/scenarios'){
    if(!user)fail(401,'Войдите в смену');
  }
- if(path==='/api/logout' && post){sessions.delete(token);if(user.role==='engineer')points.delete(user.id);res.setHeader('Set-Cookie','shift=; Path=/; Max-Age=0; HttpOnly; SameSite=Strict');return send({});}
+ if(path==='/api/logout' && post){sessions.delete(token);if(backgroundKeys.get(user.obj)?.session===token)backgroundKeys.delete(user.obj);if(user.role==='engineer')points.delete(user.id);res.setHeader('Set-Cookie','shift=; Path=/; Max-Age=0; HttpOnly; SameSite=Strict');return send({});}
  if(path==='/api/point' && post && user.role==='engineer'){
    if(body.stop){points.delete(user.id);return send({});}
    const {lat,lon,accuracy,time}=body;
