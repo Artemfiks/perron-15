@@ -46,7 +46,7 @@ export function network(roads,mode='walk',closed=[],barriers=[]) {
     }
     return best;
   }
-  return (start,end)=>{
+  function route(start,end){
     const s=snap(start),e=snap(end);
     if(!s||!e||s.gap>50 || e.gap>50)return null;
     const dist=nodes.map(()=>Infinity),prev=[],seen=new Set();
@@ -65,7 +65,9 @@ export function network(roads,mode='walk',closed=[],barriers=[]) {
     const full=[start,s.q,...path,e.q,end];
     const meters=full.slice(1).reduce((sum,p,i)=>sum+distance(p,full[i]),0);
     return {meters,minutes:len+(s.gap+e.gap)/(5000/60),path:full};
-  };
+  }
+  route.canJoin=p=>!!snap(p);
+  return route;
 }
 export function center(feature){
  const ring=feature.geometry.coordinates[0][0].slice(0,-1).map(xy);

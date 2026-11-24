@@ -77,6 +77,10 @@ function draw(team,zone){
   const [x,y]=xy([t.point.lon,t.point.lat]);shape('circle',{cx:x,cy:y,r:13,fill:({aircraft:'#aa3b46',vehicle:'#305b99'})[t.kind]||'#168262',stroke:'white','stroke-width':3});if(t.id)shape('text',{x:x+16,y,'font-size':20},t.id);
  }
 }
+function timing(f){
+ const seconds=Math.ceil(Math.abs(f.marginMs)/1000);
+ return 'ETA '+new Date(f.eta).toLocaleTimeString('ru')+' · '+(f.inTime?'запас ':'опоздание ')+Math.floor(seconds/60)+' мин '+seconds%60+' с';
+}
 async function refresh(prefer){
  const seq=++revision;
  try{
@@ -124,9 +128,22 @@ async function refresh(prefer){
    else{
     const candidate=ranking.find(c=>c.id===t.id),r=candidate?.route;
     if(!r)status=candidate?.reason||'Нет пути';
-    else{status=r.mode+' · '+Math.round(r.meters)+' м · '+r.minutes.toFixed(1)+' мин'+(Date.now()+r.minutes*60000>current.createdAt+900000?' · риск превышения 15 мин':'');if(!best || r.minutes<best.route.minutes)best={id:t.id,time:candidate.time,route:r,zone:zone.properties.id};}
+    else{
+     status=r.mode+' · '+Math.round(r.meters)+' м · вызов № '+current.number+': '+timing(candidate.forecast);
+     const impact=candidate.impact;
+     if(impact){
+      status+=' · Срочный № '+impact.number+' сейчас: '+(impact.baseline?timing(impact.baseline):'нет исполнителя');
+      status+='; после назначения: '+(impact.remaining?impact.engineer+', '+timing(impact.remaining):'нет свободного исполнителя, время ожидания неизвестно');
+     }
+     if(candidate.id===ranking[0]?.id)best={id:t.id,time:candidate.time,route:r,zone:zone.properties.id};
+    }
    }
-   if(t.job?.risk)status+=t.job.alternate?' · Замена: '+t.job.alternate.id+' ('+t.job.alternate.minutes.toFixed(1)+' мин)':' · Свободной подходящей замены нет';
+   if(t.job?.risk){
+    const alt=t.job.alternate;
+    status+=' · Срок '+new Date(t.job.createdAt+900000).toLocaleTimeString('ru');
+    if(!alt)status+=' · Свободной подходящей замены нет';
+    else status+=(alt.inTime?' · Успевает замена: ':' · Ни одна свободная замена не успевает. Быстрейшая: ')+alt.id+', '+timing(alt);
+   }
    if(t.job&&!t.job.arrivedAt)status+=' · До норматива '+Math.max(0,Math.ceil((t.job.createdAt+900000-Date.now())/1000))+' с';
    if(t.job?.aircraftNear)status+=' · Рядом ВС '+t.job.aircraftNear;
    const row=document.createElement('div'),detail=document.createElement('span');row.className='row';row.textContent=t.id;

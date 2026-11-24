@@ -12,6 +12,7 @@ const feedKey=process.env.TRACK_KEY || randomBytes(24).toString('hex');
 import {transition,insideZone} from './lifecycle.mjs';
 import {xy,setOrigin} from './route.js';
 import {planner} from './planning.mjs';
+import {forecast,comparePair} from './deadlines.mjs';
 const layer=n=>JSON.parse(readFileSync(new URL('./data/'+n+'.geojson',import.meta.url)));
 const zones=layer('service_zones').features;
 setOrigin(layer('airport_boundaries'));
@@ -49,16 +50,18 @@ function activeView(id){
  const c=jobs.get(id),p=points.get(id);
  if(!c)return null;
  const route=routing.plan(id,c);
- const eta=route?Date.now()+route.minutes*60000:null;
+ const now=Date.now(),eta=route?forecast(c,route.minutes,now).eta:null;
  const risk=!c.arrivedAt&&(!eta||eta>c.createdAt+900000);
- const alternate=risk?rank(c,false).find(x=>x.route):null;
+ const replacement=risk?candidates(c,now).find(x=>x.route):null;
+ const alternate=replacement?{id:replacement.id,minutes:replacement.route.minutes,...replacement.forecast}:null;
  const aircraftNear=p&&agents.filter(a=>a.kind==='aircraft').find(a=>{
   const q=points.get(a.id);if(!q||Date.now()-q.time>60000||Date.now()-p.time>60000)return false;
   const [x,y]=xy([q.lon,q.lat]),[u,v]=xy([p.lon,p.lat]);return Math.hypot(x-u,y-v)<75;
  });
  if((aircraftNear?.id||null)!==(c.nearbyAircraft||null)){c.nearbyAircraft=aircraftNear?.id||null;log('aircraft-proximity',id,c,{aircraft:c.nearbyAircraft,thresholdMeters:75})}
- if(risk!==!!c.lastRisk){c.lastRisk=risk;log('forecast-risk',id,c,{risk,eta,alternative:alternate?.id})}
- return {...c,route,point:p,eta,risk,alternate:alternate?{id:alternate.id,minutes:alternate.route.minutes}:null,aircraftNear:aircraftNear?.id};
+ const riskKey=risk?JSON.stringify([alternate?.id,alternate?.inTime]):'';
+ if(riskKey!==(c.lastRiskKey||'')){c.lastRiskKey=riskKey;log('forecast-risk',id,c,{risk,eta,deadline:c.createdAt+900000,alternate})}
+ return {...c,route,point:p,eta,risk,alternate,aircraftNear:aircraftNear?.id};
 }
 
 const accounts = new Map();
@@ -67,16 +70,30 @@ const beacons=new Map();
 const points = new Map();
 const jobs = new Map();
 const routing=planner(roads,zones,layer('objects').features,agents,points,jobs);
-function rank(c,record=true){
- const started=performance.now();
- const result=agents.filter(a=>a.kind==='engineer').map(a=>{
+function candidates(c,now,reservedVehicle){
+ return agents.filter(a=>a.kind==='engineer').map(a=>{
    const p=points.get(a.id),job=jobs.get(a.id);
    const reason=job?'Занят · '+job.status:!a.ata.includes(c.ata)?'Нет допуска ATA '+c.ata:a.models&&!a.models.includes(c.aircraft)?'Нет допуска на '+c.aircraft:!p?'Ожидаем GPS':Date.now()-p.time>60000?'Координаты устарели':p.accuracy>50?'Низкая точность GPS':'';
-   const route=reason?null:routing.plan(a.id,c);
-   return {id:a.id,time:p?.time,route,reason:reason||(!route?'Нет доступного маршрута':'')};
+   const route=reason?null:routing.plan(a.id,c,reservedVehicle);
+   return {id:a.id,time:p?.time,route,forecast:route?forecast(c,route.minutes,now):null,reason:reason||(!route?routing.unavailable(a.id,c):'')};
  }).sort((a,b)=>(a.route?.minutes??Infinity)-(b.route?.minutes??Infinity));
- const signature=JSON.stringify(result.map(r=>[r.id,r.time,r.reason,r.route?.minutes,r.route?.mode]));
- if(record&&c.rankSignature!==signature){c.rankSignature=signature;log('candidates','Система',c,{durationMs:performance.now()-started,candidates:result.map(r=>({id:r.id,reason:r.reason,mode:r.route?.mode,minutes:r.route?.minutes}))})}
+}
+function queueOrder(a,b){return Number(!!b.aog)-Number(!!a.aog)||a.priority.localeCompare(b.priority)||a.createdAt-b.createdAt||a.number-b.number}
+function rank(c){
+ const started=performance.now(),now=Date.now(),result=candidates(c,now);
+ const other=[...pending.values()].filter(j=>j.number!==c.number&&(j.aog||j.priority==='A')).sort(queueOrder)[0];
+ if(other){
+  const baseline=candidates(other,now),byVehicle=new Map([[undefined,baseline]]);
+  for(const row of result.filter(row=>row.route)){
+   const vehicle=row.route.vehicle;
+   if(!byVehicle.has(vehicle))byVehicle.set(vehicle,candidates(other,now,vehicle));
+   const next=byVehicle.get(vehicle).find(x=>x.route&&x.id!==row.id);
+   row.impact={number:other.number,baseline:baseline[0]?.forecast||null,engineer:next?.id,remaining:next?.forecast||null};
+  }
+  result.sort((a,b)=>a.route&&b.route?comparePair(a,b):Number(!!b.route)-Number(!!a.route));
+ }
+ const signature=JSON.stringify(result.map(r=>[r.id,r.time,r.reason,r.route?.minutes,r.route?.mode,r.forecast?.inTime,r.impact?.number,r.impact?.engineer,r.impact?.remaining?.inTime,r.impact?.remaining?.eta-now]));
+ if(c.rankSignature!==signature){c.rankSignature=signature;log('candidates','Система',c,{durationMs:performance.now()-started,candidates:result.map(r=>({id:r.id,reason:r.reason,mode:r.route?.mode,minutes:r.route?.minutes,forecast:r.forecast,impact:r.impact}))})}
  return result;
 }
 const pending = new Map();
@@ -243,7 +260,7 @@ async function handle(req,res){
    return send(call);
  }
  if(path==='/api/calls' && user.role==='dispatcher'){
-   if(!post)return send([...pending.values()].sort((a,b)=>Number(!!b.aog)-Number(!!a.aog)||a.priority.localeCompare(b.priority)||a.createdAt-b.createdAt));
+   if(!post)return send([...pending.values()].sort(queueOrder));
    let {zone,aircraft:type,defect,priority}=body;
    const custom=typeof body.text==='string'?body.text.trim():'';
    if(custom&&(custom.length>300||!Number.isInteger(body.ata)||body.ata<1||body.ata>99))fail(400,'Проверьте описание и главу ATA');
@@ -270,8 +287,8 @@ async function handle(req,res){
    if(!zones.some(z=>z.properties.id===body.zone))fail(400,'Неизвестная зона');
    const call=pending.get(body.number);
    if(!call || call.zone!==body.zone)fail(409,'Выберите открытый вызов');
-   const candidate=rank(call).find(r=>r.id===body.id);
-   if(!candidate?.route)fail(409,'Кандидат недоступен');
+   const candidate=rank(call)[0];
+   if(!candidate?.route||candidate.id!==body.id)fail(409,'Изменилась рекомендация по очереди, обновите расчёт');
    call.vehicle=candidate.route.vehicle;call.store=candidate.route.store;call.firstEta=Date.now()+candidate.route.minutes*60000;
    call.status='assigned';call.assignedAt=Date.now();jobs.set(body.id,call);pending.delete(call.number);log('assigned',user.id,call,{engineer:body.id,route:candidate.route.mode,forecast:call.firstEta});return send({});
  }
