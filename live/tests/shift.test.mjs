@@ -49,6 +49,7 @@ test('Смена через HTTP: две роли инженера, два AOG, 
   await req('competition-feed',d,{enable:true});await req('v1/track',null,gps('RA-73142',0));await req('competition-feed',d,{enable:false});await req('v1/track',null,gps('RA-73142',0),401);
   const remark=await req('remarks',a,{note:'Замечание с борта'});assert.equal((await req('remarks',d))[0].id,remark.id);
   const form={zone:zones[0].properties.id,priority:'A',aircraft:'A320',tail:'TEST-01'};
+  for(const session of [a,b])await req('availability',session,{minutes:1});
   const first=await req('calls',d,{...form,text:'Тест навигации',ata:34,remarkId:remark.id,scheduled:new Date().toISOString()});
   const second=await req('calls',d,{...form,defect:'HYD'});assert.equal((await req('calls',d)).length,2);
   assert.deepEqual(await req('remarks',d),[]);
@@ -59,8 +60,8 @@ test('Смена через HTTP: две роли инженера, два AOG, 
   assert(pair[1].route.minutes<pair[0].route.minutes);
   assert.equal(pair[0].impact.engineer,'Инженер 2');
   assert.equal(pair[1].impact.remaining,null);
-  await req('assign',d,{id:pair[1].id,time:pair[1].time,number:first.number,zone:first.zone},409);
-  await req('assign',d,{id:pair[0].id,time:pair[0].time,number:first.number,zone:first.zone});
+  await req('availability',a,{minutes:0});
+  assert.equal((await req('job',a)).number,first.number);
   const originalEngineer={id:'Инженер 1',obj:'e-01',membershipId:null};
   await req('remove-engineer',d,originalEngineer,409);
   await req('remove-engineer',b,originalEngineer,403);
@@ -69,12 +70,10 @@ test('Смена через HTTP: две роли инженера, два AOG, 
   assert(alert.risk);assert(alert.alternate.inTime);
   assert.equal(alert.alternate.deadline,first.createdAt+900000);
   assert.equal(alert.alternate.marginMs,alert.alternate.deadline-alert.alternate.eta);
-  await req('action',a,{number:first.number,action:'reject'});
   await req('roster',d,{obj:'e-02',kind:'engineer',ata:[29]});
   await req('v1/track',a,gps('e-01',1));await req('v1/track',b,gps('e-02',1));
-  const assign=async c=>{const list=await req('rank?number='+c.number,d);assert(list[0].route);assert(list.some(x=>x.reason));await req('assign',d,{number:c.number,id:list[0].id,time:list[0].time,zone:c.zone})};
+  await req('availability',b,{minutes:0});assert.equal((await req('job',b)).number,second.number);
   const action=(s,c,action,status=200)=>req('action',s,{number:c.number,action},status);
-  await assign(first);await action(a,first,'reject');await assign(first);await assign(second);
   for(const [s,c,obj] of [[a,first,'e-01'],[b,second,'e-02']]){
    await action(s,c,'accept');await action(s,c,'done',409);
    await req('v1/track',s,gps(obj,0));assert.equal((await req('job',s)).status,'arrived');
@@ -84,9 +83,10 @@ test('Смена через HTTP: две роли инженера, два AOG, 
   await action(b,second,'wait');assert.equal(await req('job',b),null);
   await req('control',a,{number:first.number,reason:'Запчасть'},403);
   await req('control',d,{number:second.number,reason:'Деталь доставлена'});
-  await assign(second);await action(b,second,'accept');await req('v1/track',b,gps('e-02',0));
+  assert.equal((await req('job',b)).number,second.number);await action(b,second,'accept');await req('v1/track',b,gps('e-02',0));
   await action(b,second,'start');await req('decision',b,{number:second.number,decision:'B',until:new Date(Date.now()+86400000).toISOString()});
   await action(b,second,'done');await action(a,first,'done');
+  await req('point',a,{stop:true});await req('point',b,{stop:true});
   const next=await req('calls',d,{...form,defect:'NAV'});assert.equal(next.melHistory[0].number,second.number);
   const metrics=await req('metrics',d);assert.equal(metrics.arrived,2);assert.equal(metrics.onTime,2);assert.equal(metrics.withoutArrival,1);assert(metrics.meanSelectionMs>=0);
   const csv=await req('log.csv',d);for(const k of ['registered','remark','candidates','assigned','arrival','route-update','reassignment','engineering-decision','track-error','aircraft-schedule'])assert(csv.includes(k),k);

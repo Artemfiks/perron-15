@@ -1,5 +1,5 @@
 const transitions={assigned:{accept:'enroute',reject:'pending'},enroute:{arrive:'arrived'},arrived:{start:'working'},working:{done:'done',wait:'waiting'}};
-export const labels={pending:'В очереди',assigned:'Назначен',enroute:'В пути',arrived:'Прибыл',working:'В работе',done:'Выполнено',waiting:'Ожидание запчасти'};
+export const labels={pending:'В очереди',assigned:'Ожидает ответа инженера',enroute:'В пути',arrived:'Прибыл',working:'В работе',done:'Выполнено',waiting:'Ожидание запчасти'};
 export function transition(call,action,time){
  const status=transitions[call?.status]?.[action];
  if(!status)throw Object.assign(Error('Действие недоступно на текущем этапе'),{status:409});

@@ -22,6 +22,12 @@ const digest=s=>createHash('sha256').update(s).digest('hex');
 const remarks=new Map();
 let feedUntil=0;
 const history=new Map();
+const offerMs=Number(process.env.OFFER_TIMEOUT_MS)||60000;
+function deadlineBreach(call,now){
+ if(!call.breachAt&&now>call.createdAt+900000){
+  call.breachAt=now;log('deadline-breach','Система',call,{deadline:call.createdAt+900000,observedAt:now,arrivalConfirmed:!!call.arrivedAt});
+ }
+}
 function onPosition(agent,point){
  if(agent.kind==='vehicle')for(const [id,c] of jobs){
   if(c.arrivedAt)continue;
@@ -40,10 +46,13 @@ function onPosition(agent,point){
   if(!forecast||forecast>call.createdAt+900000)db.record('risk','Диспетчер',call,{forecast,deadline:call.createdAt+900000});
  }
  if(call?.store&&!call.kitCollected&&call.status==='enroute'&&point.time>=call.acceptedAt&&Date.now()-point.time<=60000&&point.accuracy<=50){const pos=xy([point.lon,point.lat]);if(Math.hypot(pos[0]-call.store[0],pos[1]-call.store[1])<=12){call.kitCollected=true;log('kit-collected',agent.id,call)}}
- if(call?.status==='enroute'&&(!call.kit||call.kitCollected)&&point.time>=call.acceptedAt&&Date.now()-point.time<=60000&&point.accuracy<=50&&insideZone([point.lon,point.lat],zones.find(z=>z.properties.id===call.zone))){
+ const zoneId=call?.status==='enroute'?routing.destination(call).zone:null;
+ const arrivalZone=zoneId!=null&&zones.find(z=>z.properties.id===zoneId);
+ if(arrivalZone&&(!call.kit||call.kitCollected)&&point.time>=call.acceptedAt&&Date.now()-point.time<=60000&&point.accuracy<=50&&insideZone([point.lon,point.lat],arrivalZone)){
    transition(call,'arrive',point.time);
    log('arrival',agent.id,call,{arrivedAt:point.time,inLimit:call.inLimit,elapsedSeconds:(point.time-call.createdAt)/1000});
-   if(!call.inLimit)log('deadline-breach',agent.id,call);
+   if(!call.inLimit)deadlineBreach(call,point.time);
+   else if(call.breachAt){delete call.breachAt;log('deadline-confirmed-on-time',agent.id,call,{fixAt:point.time})}
  }
 }
 function activeView(id){
@@ -53,7 +62,7 @@ function activeView(id){
  const now=Date.now(),eta=route?forecast(c,route.minutes,now).eta:null;
  const risk=!c.arrivedAt&&(!eta||eta>c.createdAt+900000);
  const replacement=risk?candidates(c,now).find(x=>x.route):null;
- const alternate=replacement?{id:replacement.id,minutes:replacement.route.minutes,...replacement.forecast}:null;
+ const alternate=replacement?{id:replacement.id,minutes:replacement.route.minutes,busyUntil:replacement.busyUntil,...replacement.forecast}:null;
  const aircraftNear=p&&agents.filter(a=>a.kind==='aircraft').find(a=>{
   const q=points.get(a.id);if(!q||Date.now()-q.time>60000||Date.now()-p.time>60000)return false;
   const [x,y]=xy([q.lon,q.lat]),[u,v]=xy([p.lon,p.lat]);return Math.hypot(x-u,y-v)<75;
@@ -61,7 +70,8 @@ function activeView(id){
  if((aircraftNear?.id||null)!==(c.nearbyAircraft||null)){c.nearbyAircraft=aircraftNear?.id||null;log('aircraft-proximity',id,c,{aircraft:c.nearbyAircraft,thresholdMeters:75})}
  const riskKey=risk?JSON.stringify([alternate?.id,alternate?.inTime]):'';
  if(riskKey!==(c.lastRiskKey||'')){c.lastRiskKey=riskKey;log('forecast-risk',id,c,{risk,eta,deadline:c.createdAt+900000,alternate})}
- return {...c,route,point:p,eta,risk,alternate,aircraftNear:aircraftNear?.id};
+ const destination=routing.destination(c);
+ return {...c,route,point:p,eta,risk,alternate,arrivalZone:destination.zone,targetSource:destination.source,aircraftNear:aircraftNear?.id};
 }
 
 const accounts = new Map();
@@ -73,16 +83,20 @@ const routing=planner(roads,zones,layer('objects').features,agents,points,jobs);
 function candidates(c,now,reservedVehicle){
  return agents.filter(a=>a.kind==='engineer').map(a=>{
    const p=points.get(a.id),job=jobs.get(a.id);
-   const reason=job?'Занят · '+job.status:!a.ata.includes(c.ata)?'Нет допуска ATA '+c.ata:a.models&&!a.models.includes(c.aircraft)?'Нет допуска на '+c.aircraft:!p?'Ожидаем GPS':Date.now()-p.time>60000?'Координаты устарели':p.accuracy>50?'Низкая точность GPS':'';
+   const previous=c.offers?.findLast(o=>o.engineer===a.id);
+   const declined=previous?.outcome==='rejected'?'Отклонил вызов':previous?.outcome==='timeout'&&now-previous.endedAt<120000?'Не ответил на вызов':'';
+   const finishing=job?.status==='working'&&a.availabilityJob===job.number&&a.busyUntil>now;
+   const reason=job&&!finishing?'Занят · '+job.status:declined||(!a.ata.includes(c.ata)?'Нет допуска ATA '+c.ata:a.models&&!a.models.includes(c.aircraft)?'Нет допуска на '+c.aircraft:!p?'Ожидаем GPS':now-p.time>60000?'Координаты устарели':p.accuracy>50?'Низкая точность GPS':'');
    const route=reason?null:routing.plan(a.id,c,reservedVehicle);
-   return {id:a.id,time:p?.time,route,forecast:route?forecast(c,route.minutes,now):null,reason:reason||(!route?routing.unavailable(a.id,c):'')};
- }).sort((a,b)=>(a.route?.minutes??Infinity)-(b.route?.minutes??Infinity));
+   const busyUntil=a.busyUntil||0,waitMinutes=Math.max(0,busyUntil-now)/60000;
+   return {id:a.id,time:p?.time,route,busyUntil,waitMinutes,forecast:route?forecast(c,route.minutes+waitMinutes,now):null,reason:reason||(!route?routing.unavailable(a.id,c):'')};
+ }).sort((a,b)=>(a.forecast?.eta??Infinity)-(b.forecast?.eta??Infinity));
 }
 function queueOrder(a,b){return Number(!!b.aog)-Number(!!a.aog)||a.priority.localeCompare(b.priority)||a.createdAt-b.createdAt||a.number-b.number}
 function rank(c){
  const started=performance.now(),now=Date.now(),result=candidates(c,now);
  const other=[...pending.values()].filter(j=>j.number!==c.number&&(j.aog||j.priority==='A')).sort(queueOrder)[0];
- if(other){
+ if(other&&!c.offers?.length){
   const baseline=candidates(other,now),byVehicle=new Map([[undefined,baseline]]);
   for(const row of result.filter(row=>row.route)){
    const vehicle=row.route.vehicle;
@@ -92,9 +106,37 @@ function rank(c){
   }
   result.sort((a,b)=>a.route&&b.route?comparePair(a,b):Number(!!b.route)-Number(!!a.route));
  }
- const signature=JSON.stringify(result.map(r=>[r.id,r.time,r.reason,r.route?.minutes,r.route?.mode,r.forecast?.inTime,r.impact?.number,r.impact?.engineer,r.impact?.remaining?.inTime,r.impact?.remaining?.eta-now]));
- if(c.rankSignature!==signature){c.rankSignature=signature;log('candidates','Система',c,{durationMs:performance.now()-started,candidates:result.map(r=>({id:r.id,reason:r.reason,mode:r.route?.mode,minutes:r.route?.minutes,forecast:r.forecast,impact:r.impact}))})}
+ const signature=JSON.stringify(result.map(r=>[r.id,r.time,r.reason,r.route?.minutes,r.route?.mode,r.forecast?.inTime,r.impact?.number,r.impact?.engineer,r.impact?.remaining?.inTime,r.busyUntil]));
+ if(c.rankSignature!==signature){c.rankSignature=signature;log('candidates','Система',c,{durationMs:performance.now()-started,candidates:result.map(r=>({id:r.id,reason:r.reason,mode:r.route?.mode,minutes:r.route?.minutes,busyUntil:r.busyUntil,forecast:r.forecast,impact:r.impact}))})}
  return result;
+}
+function clearWorkEstimate(engineer,number){
+ const agent=agents.find(a=>a.id===engineer);
+ if(agent?.availabilityJob===number){agent.busyUntil=0;agent.availabilityJob=null}
+}
+function releaseOffer(call,engineer,outcome,now){
+ const offer=call.offers?.at(-1);
+ if(offer){offer.outcome=outcome;offer.endedAt=now}
+ jobs.delete(engineer);call.status='pending';pending.set(call.number,call);
+ delete call.vehicle;delete call.store;delete call.boarded;delete call.replyBy;
+ log('offer-'+outcome,engineer,call,{at:now});
+}
+function processQueue(){
+ const now=Date.now();
+ for(const [id,c] of jobs){
+  if(!c.arrivedAt)deadlineBreach(c,now);
+  if(c.status==='assigned'&&now>=(c.replyBy??c.assignedAt+offerMs))releaseOffer(c,id,'timeout',now);
+ }
+ for(const c of [...pending.values()].sort(queueOrder)){
+  deadlineBreach(c,now);
+  const pick=rank(c)[0];
+  if(!pick?.route||pick.busyUntil>now||jobs.has(pick.id))continue;
+  c.status='assigned';c.assignedAt=now;c.replyBy=now+offerMs;
+  c.vehicle=pick.route.vehicle;c.store=pick.route.store;c.firstEta??=pick.forecast.eta;
+  (c.offers??=[]).push({engineer:pick.id,at:now,replyBy:c.replyBy,outcome:'offered'});
+  jobs.set(pick.id,c);pending.delete(c.number);
+  log('assigned','Система',c,{engineer:pick.id,route:pick.route.mode,forecast:pick.forecast.eta,replyBy:c.replyBy,target:routing.destination(c).source});
+ }
 }
 const pending = new Map();
 let nextCall = 1;
@@ -107,7 +149,14 @@ if(saved){
  for(const r of saved.remarks||[])remarks.set(r.id,r);
  for(const c of saved.calls)history.set(c.number,c);
  for(const n of saved.pending)pending.set(n,history.get(n));
- for(const [id,n] of saved.jobs)jobs.set(id,history.get(n));
+ for(const [id,n] of saved.jobs){
+  const call=history.get(n);
+  if(call.status==='assigned'&&!call.offers){
+   call.assignedAt??=Date.now();call.replyBy=call.assignedAt+offerMs;
+   call.offers=[{engineer:id,at:call.assignedAt,replyBy:call.replyBy,outcome:'offered'}];
+  }
+  jobs.set(id,call);
+ }
  nextCall=Math.max(0,...history.keys())+1;
  routing.close(saved.closed||[]);
  for(const [k,v] of Object.entries(saved.defects||{}))defects[k]=v;
@@ -308,6 +357,24 @@ async function handle(req,res){
  }
  if(path==='/api/remarks'&&user.role==='dispatcher'&&!post)return send([...remarks.values()].filter(r=>!r.call));
  if(path==='/api/catalog'&&!post)return send(defects);
+ if(path==='/api/availability'&&post&&user.role==='engineer'){
+  const minutes=body.minutes;
+  if(!Number.isInteger(minutes)||minutes<0||minutes>1440)fail(400,'Введите от 0 до 1440 минут');
+  const agent=agents.find(a=>a.obj===user.obj&&a.kind==='engineer');
+  agent.busyUntil=minutes?Date.now()+minutes*60000:0;
+  const call=jobs.get(agent.id);
+  agent.availabilityJob=minutes&&call?.status==='working'?call.number:null;
+  if(minutes&&call?.status==='assigned')releaseOffer(call,agent.id,'busy',Date.now());
+  log('availability',agent.id,null,{busyUntil:agent.busyUntil,minutes});
+  processQueue();return send({busyUntil:agent.busyUntil});
+ }
+ if(path==='/api/dispatch'&&!post&&user.role==='dispatcher'){
+  return send([...history.values()].sort((a,b)=>b.number-a.number).map(c=>{
+   const destination=routing.destination(c);
+   const {number,createdAt,zone,aircraft,tail,description,defect,priority,aog,mel,status,offers,arrivedAt,inLimit,breachAt}=c;
+   return {number,createdAt,zone,aircraft,tail,description,defect,priority,aog,mel,status,offers,arrivedAt,inLimit,breachAt,targetSource:destination.source,arrivalZone:destination.zone};
+  }));
+ }
  if(path==='/api/job' && !post && user.role==='engineer')return send(activeView(user.id));
  if(path==='/api/tool'&&post&&user.role==='engineer'){
   const c=jobs.get(user.id);if(!c||c.number!==body.number||!c.kit||typeof body.collected!=='boolean')fail(409,'Проверьте задание и комплект');
@@ -325,9 +392,12 @@ async function handle(req,res){
  if(path==='/api/control'&&post&&user.role==='dispatcher'){
   const c=history.get(body.number);
   if(!c||!['working','waiting','assigned','enroute','arrived'].includes(c.status)||typeof body.reason!=='string'||!body.reason.trim())fail(409,'Укажите действующую заявку и причину');
-  const from=c.status;for(const [id,j] of jobs)if(j.number===c.number)jobs.delete(id);
+  const from=c.status;
+  if(from==='assigned'&&c.offers?.at(-1))Object.assign(c.offers.at(-1),{outcome:'returned',endedAt:Date.now()});
+  delete c.replyBy;
+  for(const [id,j] of jobs)if(j.number===c.number){jobs.delete(id);clearWorkEstimate(id,c.number)}
   c.status='pending';delete c.vehicle;delete c.boarded;c.previousArrival=c.arrivedAt;delete c.arrivedAt;delete c.acceptedAt;
-  pending.set(c.number,c);log('reassignment',user.id,c,{from,reason:body.reason});return send(c);
+  pending.set(c.number,c);log('reassignment',user.id,c,{from,reason:body.reason});processQueue();return send(c);
  }
  if(path==='/api/history'&&!post&&user.role==='dispatcher')return send([...history.values()].map(c=>({number:c.number,status:c.status,zone:c.zone,aog:c.aog})));
  if((path==='/api/action'||path==='/api/done')&&post&&user.role==='engineer'){
@@ -335,12 +405,19 @@ async function handle(req,res){
    if(!call||call.number!==body.number)fail(409,'Назначение изменилось');
    const action=path==='/api/done'?'done':body.action;
    if(!['accept','reject','start','done','wait'].includes(action))fail(400,'Недоступное действие');
-   transition(call,action,Date.now());
-   if(action==='reject'){pending.set(call.number,call);jobs.delete(user.id)}
-   if(action==='done')jobs.delete(user.id);
-   if(action==='wait')jobs.delete(user.id);
+   const now=Date.now();
+   if(['accept','reject'].includes(action)&&body.offerAt!==undefined&&body.offerAt!==call.assignedAt)fail(409,'Предложение изменилось. Обновите задание.');
+   if(call.status==='assigned'&&now>=(call.replyBy??call.assignedAt+offerMs)){processQueue();fail(409,'Время ответа истекло')}
+   if(action==='reject'&&call.status==='assigned'){
+    releaseOffer(call,user.id,'rejected',now);processQueue();return send({number:call.number,status:call.status});
+   }
+   transition(call,action,now);
+   if(action==='accept'&&call.offers?.at(-1)){
+    Object.assign(call.offers.at(-1),{outcome:'accepted',endedAt:now});delete call.replyBy;
+   }
+   if(action==='done'||action==='wait'){jobs.delete(user.id);clearWorkEstimate(user.id,call.number)}
    if(action==='accept'&&points.has(user.id))onPosition(user,points.get(user.id));
-   log('status',user.id,call,{action,status:call.status});
+   log('status',user.id,call,{action,status:call.status});processQueue();
    return send(call);
  }
  if(path==='/api/calls' && user.role==='dispatcher'){
@@ -363,18 +440,7 @@ async function handle(req,res){
    call.description=defects[defect].join(' · ');call.source=['Экипаж','Сотрудник','MCC/ЦПУ'].includes(body.source)?body.source:'Экипаж';
    if(remark)call.source='Сотрудник';
    call.melHistory=call.tail?[...history.values()].filter(old=>old.number!==call.number&&old.tail===call.tail&&old.mel).map(old=>({number:old.number,mel:old.mel,until:old.until})):[];
-   pending.set(call.number,call);log('registered',user.id,call,{...call});return send(call);
- }
- if(path==='/api/assign' && post && user.role==='dispatcher'){
-   const p=points.get(body.id);
-   if(!p || Date.now()-p.time>60000 || p.accuracy>50 || jobs.has(body.id) || p.time!==body.time)fail(409,'Состояние изменилось, обновите расчёт');
-   if(!zones.some(z=>z.properties.id===body.zone))fail(400,'Неизвестная зона');
-   const call=pending.get(body.number);
-   if(!call || call.zone!==body.zone)fail(409,'Выберите открытый вызов');
-   const candidate=rank(call)[0];
-   if(!candidate?.route||candidate.id!==body.id)fail(409,'Изменилась рекомендация по очереди, обновите расчёт');
-   call.vehicle=candidate.route.vehicle;call.store=candidate.route.store;call.firstEta=Date.now()+candidate.route.minutes*60000;
-   call.status='assigned';call.assignedAt=Date.now();jobs.set(body.id,call);pending.delete(call.number);log('assigned',user.id,call,{engineer:body.id,route:candidate.route.mode,forecast:call.firstEta});return send({});
+   pending.set(call.number,call);log('registered',user.id,call,{...call});processQueue();return send(call);
  }
  if(path.startsWith('/api/') || (path==='/scenarios' && user.role!=='dispatcher'))fail(403,'Доступ ограничен');
  const file=files.get(path);
@@ -389,6 +455,7 @@ server.on('error',error=>{
   process.exitCode=1;
 });
 server.listen(port,host,()=>{
+  setInterval(processQueue,1000).unref();
   if(!process.env.RENDER)for(const [code,account] of accounts)console.log(account.id+' — '+code);
   console.log('Перрон-15 · '+(tls?'https':'http')+'://'+host+':'+server.address().port);
 });

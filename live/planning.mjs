@@ -10,12 +10,20 @@ export function planner(roads,zones,objects,agents,points,jobs){
  const destinations=new Map(zones.map(z=>[z.properties.id,center(z)]));
  const stores=objects.filter(f=>config.stores.includes(f.properties.id)).map(center);
  const fresh=p=>p&&Date.now()-p.time<=60000&&p.accuracy<=50;
+ function destination(c){
+  const tail=c.tail?.trim().toUpperCase();
+  const plane=tail&&agents.find(a=>a.kind==='aircraft'&&[a.id,a.obj].some(v=>v?.toUpperCase()===tail));
+  const fix=plane&&points.get(plane.id);
+  if(!fresh(fix))return {target:destinations.get(c.zone),zone:c.zone,source:'Зона '+c.zone};
+  const coords=[fix.lon,fix.lat];
+  return {target:xy(coords),zone:zones.find(z=>insideZone(coords,z))?.properties.id??null,source:'GPS борта '+plane.id};
+ }
  function join(start,via,target,route){const out={path:[start],minutes:0,meters:0};for(const end of [...via,target]){
   const leg=route(out.path.at(-1),end);if(!leg)return null;
   out.path.push(...leg.path.slice(1));out.minutes+=leg.minutes;out.meters+=leg.meters;
  }return out}
  function plan(id,c,reservedVehicle){
-  const p=points.get(id),target=destinations.get(c.zone);
+  const p=points.get(id),{target}=destination(c);
   if(!fresh(p)||!target)return null;
   const start=xy([p.lon,p.lat]);
   const variants=[];
@@ -25,7 +33,7 @@ export function planner(roads,zones,objects,agents,points,jobs){
    if(direct)variants.push({...direct,mode:'Пешком',minutes:direct.minutes+via.length*.5,store:via[0]});
    for(const a of agents.filter(a=>a.kind==='vehicle')){
     if(a.id===reservedVehicle)continue;
-    if(jobs.has(id)&&c.vehicle!==a.id)continue;
+    if(jobs.get(id)===c&&c.vehicle!==a.id)continue;
     const vp=points.get(a.id);if(!fresh(vp)||[...jobs].some(([owner,j])=>owner!==id&&j.vehicle===a.id))continue;
     const car=xy([vp.lon,vp.lat]), approach=walk(start,car), leg=join(car,via,target,drive);
     if(!approach||!leg)continue;
@@ -36,15 +44,15 @@ export function planner(roads,zones,objects,agents,points,jobs){
   return variants.sort((a,b)=>a.minutes-b.minutes)[0]||null;
  }
  function unavailable(id,c){
-  const p=points.get(id),target=destinations.get(c.zone);
+  const p=points.get(id),{target}=destination(c);
   if(!p||!target)return 'Недостаточно данных для маршрута';
   const coords=[p.lon,p.lat],start=xy(coords);
   const obstacle=barriers.find(f=>insideZone(coords,f));
   if(obstacle)return 'GPS внутри закрытого контура «'+obstacle.properties.name+'». Нужна свежая точка на разрешённой дорожке за контуром.';
   if(!walk.canJoin(start))return 'От GPS-точки нет разрешённого подхода к открытой дороге в пределах 50 м.';
-  if(!walk.canJoin(target))return 'Зона '+c.zone+' недоступна с открытых дорог. Проверьте перекрытия.';
+  if(!walk.canJoin(target))return destination(c).source+' · нет подхода по открытым дорогам.';
   if(c.kit&&!c.kitCollected&&walk(start,target))return 'До зоны можно дойти, но нет доступного маршрута через склад.';
   return 'Старт и зона '+c.zone+' не соединены доступными дорогами. Проверьте перекрытия.';
  }
- return {plan,unavailable,close,get closed(){return closed}};
+ return {plan,unavailable,destination,close,get closed(){return closed}};
 }
