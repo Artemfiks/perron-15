@@ -123,9 +123,15 @@ const host = process.env.HOST || (process.env.RENDER?'0.0.0.0':'127.0.0.1');
 if (!tls && !['127.0.0.1','localhost','::1'].includes(host) && process.env.TRUST_HTTPS_PROXY !== 'yes') {
   throw Error('Для сети настройте HTTPS (TLS_CERT и TLS_KEY) или защищённый обратный прокси.');
 }
-for (const [id,role] of [['Диспетчер','dispatcher'],['Инженер 1','engineer'],['Инженер 2','engineer']]) {
-  const code = process.env[['DISPATCH_CODE','ENGINEER_ONE_CODE','ENGINEER_TWO_CODE'][accounts.size]] || randomBytes(8).toString('hex');
-  accounts.set(code,{id,role,obj:agents.find(a=>a.id===id)?.obj});
+for(const [id,role,variable] of [['Диспетчер','dispatcher','DISPATCH_CODE'],['Инженер 1','engineer','ENGINEER_ONE_CODE'],['Инженер 2','engineer','ENGINEER_TWO_CODE']]){
+  const obj=agents.find(a=>a.id===id)?.obj;
+  if(role==='engineer'&&[...extraAccounts.values()].some(account=>account.obj===obj))continue;
+  const code=process.env[variable]||randomBytes(8).toString('hex');
+  accounts.set(code,{id,role,obj});
+}
+function engineerCredential(agent){
+ const code=randomBytes(8).toString('hex');
+ return {code,key:digest(code),account:{id:agent.id,obj:agent.obj,role:'engineer'}};
 }
 const files = new Map(Object.entries({
   '/':['index.html','text/html'], '/ui.js':['ui.js','text/javascript'],
@@ -205,20 +211,49 @@ async function handle(req,res){
   catch(e){db.record('track-error','Источник',null,{message:e.message});throw e}
  }
  if(path==='/api/agents'&&!post&&user)return send(agents.filter(a=>user.role==='dispatcher'||a.id===user.id||a.kind!=='engineer').map(a=>({...a,point:points.get(a.id)})));
+ if(path==='/api/engineer-code'&&post&&user?.role==='dispatcher'){
+  const agent=agents.find(a=>a.obj===body.obj&&a.kind==='engineer');
+  if(!agent)fail(404,'Инженер не найден');
+  const issued=engineerCredential(agent);
+  const old=[...extraAccounts].filter(([,account])=>account.obj===agent.obj);
+  for(const [key] of old)extraAccounts.delete(key);
+  extraAccounts.set(issued.key,issued.account);
+  try{log('engineer-code-issued',user.id,null,{obj:agent.obj})}
+  catch(error){
+   extraAccounts.delete(issued.key);
+   for(const [key,account] of old)extraAccounts.set(key,account);
+   throw error;
+  }
+  for(const [key,account] of accounts)if(account.role==='engineer'&&account.obj===agent.obj)accounts.delete(key);
+  for(const [key,entry] of sessions)if(entry.user.obj===agent.obj)sessions.delete(key);
+  backgroundKeys.delete(agent.obj);
+  return send({obj:agent.obj,code:issued.code});
+ }
  if(path==='/api/roster'&&post&&user?.role==='dispatcher'){
   const {obj,kind,ata}=body;
   if(typeof obj!=='string'||!/^[-\w]{1,32}$/.test(obj)||!['engineer','vehicle','aircraft'].includes(kind)||!Array.isArray(ata)||ata.some(n=>!Number.isInteger(n)||n<1||n>99))fail(400,'Проверьте идентификатор, тип и допуски');
   let a=agents.find(a=>a.obj===obj);if(a&&a.kind!==kind)fail(409,'Тип существующего объекта изменить нельзя');
-  let code=null;
   if(body.createOnly&&a)fail(409,'Этот идентификатор уже занят');
   if(body.previous){
    const same=(left,right)=>Array.isArray(right)&&JSON.stringify([...left].sort())===JSON.stringify([...right].sort());
    if(!a||!same(a.ata||[],body.previous.ata)||!same(a.models??aircraft,body.previous.models))fail(409,'Другой диспетчер изменил допуски. Выберите сотрудника заново и проверьте изменения.');
   }
   if(body.models!==undefined&&(!Array.isArray(body.models)||body.models.some(m=>!aircraft.includes(m))))fail(400,'Проверьте типы ВС');
-  if(!a){a={id:obj,obj,kind};agents.push(a);if(kind==='engineer'){code=randomBytes(12).toString('hex');extraAccounts.set(digest(code),{id:obj,obj,role:kind})}}
+  if(!a){
+   const name=body.name===undefined?obj:body.name;
+   if(typeof name!=='string'||!name.trim()||name.trim().length>64)fail(400,'Введите имя до 64 символов');
+   const id=name.trim();
+   if(id==='Диспетчер'||agents.some(agent=>agent.id===id))fail(409,'Участник с таким именем уже есть');
+   a={id,obj,kind,ata};if(body.models)a.models=body.models;
+   const issued=kind==='engineer'?engineerCredential(a):null;
+   agents.push(a);
+   if(issued)extraAccounts.set(issued.key,issued.account);
+   try{log('roster',user.id,null,{obj,kind,ata})}
+   catch(error){agents.pop();if(issued)extraAccounts.delete(issued.key);throw error}
+   return send({obj,code:issued?.code??null});
+  }
   if(body.models)a.models=body.models;
-  a.ata=ata;log('roster',user.id,null,{obj,kind,ata});return send({obj,code});
+  a.ata=ata;log('roster',user.id,null,{obj,kind,ata});return send({obj,code:null});
  }
  if(path==='/api/roads'&&user&&(!post||user.role==='dispatcher')){
   if(post){if(!Array.isArray(body.ids)||body.ids.some(i=>!roads.features.some(f=>f.properties.id===i)))fail(400,'Проверьте ID рёбер');routing.close(body.ids)}

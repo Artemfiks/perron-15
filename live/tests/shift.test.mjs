@@ -18,7 +18,7 @@ test('Смена через HTTP: две роли инженера, два AOG, 
  async function req(path,session,body,status=200){
   const r=await fetch(base+'/api/'+path,{method:body===undefined?'GET':'POST',headers:{'content-type':'application/json',...(session==='feed'?{authorization:'Bearer test-feed'}:{cookie:session||''})},body:JSON.stringify(body)});
   const data=await r.text();assert.equal(r.status,status,path+' '+data.slice(0,180));
-  if(path==='login')return r.headers.get('set-cookie').split(';')[0];
+  if(path==='login'&&r.ok)return r.headers.get('set-cookie').split(';')[0];
   return path==='log.csv'?data:JSON.parse(data);
  }
  const login=(role,code)=>req('login',null,{role,code});
@@ -88,7 +88,18 @@ test('Смена через HTTP: две роли инженера, два AOG, 
   const metrics=await req('metrics',d);assert.equal(metrics.arrived,2);assert.equal(metrics.onTime,2);assert.equal(metrics.withoutArrival,1);assert(metrics.meanSelectionMs>=0);
   const csv=await req('log.csv',d);for(const k of ['registered','remark','candidates','assigned','arrival','route-update','reassignment','engineering-decision','track-error','aircraft-schedule'])assert(csv.includes(k),k);
   const extra=await req('roster',d,{obj:'extra',kind:'engineer',ata:[34],models:['A320']});
-  await stop();await start();d=await login('dispatcher','test-d');await login('engineer',extra.code);
+  const extraSession=await login('engineer',extra.code);
+  await req('engineer-code',extraSession,{obj:'e-01'},403);
+  await req('engineer-code',d,{obj:'v-01'},404);
+  const reset=await req('engineer-code',d,{obj:'extra'});
+  const builtIn=await req('engineer-code',d,{obj:'e-01'});
+  assert.equal(await req('me',extraSession),null);assert.equal(await req('me',a),null);
+  const denied=code=>req('login',null,{role:'engineer',code},401);
+  await denied(extra.code);await denied('test-a');
+  await stop();await start();d=await login('dispatcher','test-d');
+  await denied(extra.code);await denied('test-a');
+  await login('engineer',reset.code);await login('engineer',builtIn.code);await login('engineer','test-b');
+  const logText=await req('log.csv',d);assert(![extra.code,reset.code,builtIn.code].some(c=>logText.includes(c)));
   assert.deepEqual(await req('metrics',d),metrics);assert.equal((await req('calls',d))[0].number,next.number);
  }finally{await stop();await rm(directory,{recursive:true,force:true})}
 });

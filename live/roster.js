@@ -9,7 +9,7 @@ export function rosterEditor(api,refresh,aircraft,defects){
  const form=byId('roster-panel'),person=byId('roster-person'),kind=byId('roster-kind');
  const chapterList=byId('chapter-list'),models=byId('roster-models'),status=byId('roster-status');
  const save=byId('roster-save'),number=byId('chapter-number');
- let people=[],baseline,dirty=false,saving=false;
+ let people=[],occupied=[],baseline,dirty=false,saving=false;
  const isNew=()=>person.value==='+';
  const qualifications=a=>({ata:sorted(a?.ata??[]),models:[...(a?.models??aircraft)].sort()});
  const checked=(container)=>Array.from(container.querySelectorAll('input:checked'),i=>i.value);
@@ -28,6 +28,8 @@ export function rosterEditor(api,refresh,aircraft,defects){
   const agent=people.find(a=>a.obj===person.value);
   baseline=qualifications(agent);dirty=false;
   byId('roster-new').hidden=!isNew();byId('roster-id').required=isNew();byId('roster-id').value='';
+  byId('engineer-name').value='';byId('engineer-name-field').hidden=false;
+  byId('issue-details').hidden=isNew();byId('issue-details').open=false;
   byId('roster-code').hidden=true;byId('new-engineer-code').value='';
   kind.value='engineer';byId('roster-qualifications').hidden=false;
   const chapters=new Set([...chapterNames.keys(),...baseline.ata]);
@@ -37,11 +39,11 @@ export function rosterEditor(api,refresh,aircraft,defects){
   for(const n of sorted(chapters))option(chapterList,n,'ATA '+String(n).padStart(2,'0'),chapterNames.get(n)||'Дополнительная глава',baseline.ata.includes(n));
   for(const model of aircraft)option(models,model,model,'',baseline.models.includes(model));
   number.value='';byId('chapter-count').textContent='Выбрано '+baseline.ata.length;
-  save.textContent=isNew()?'Добавить участника':'Сохранить допуски';
+  save.textContent=isNew()?'Создать и выдать код':'Сохранить допуски';
   save.disabled=saving||!isNew();status.textContent=message;
  }
  function update(agents){
-  people=agents.filter(a=>a.kind==='engineer');
+  occupied=agents.map(a=>a.obj);people=agents.filter(a=>a.kind==='engineer');
   const ids=people.map(a=>a.obj);
   if(JSON.stringify(ids)!==JSON.stringify(Array.from(person.options,o=>o.value).filter(k=>k!=='+'))||!person.options.length){
    const selected=person.value;
@@ -51,8 +53,35 @@ export function rosterEditor(api,refresh,aircraft,defects){
   }
   if(!dirty&&!saving&&!isNew()&&JSON.stringify(baseline)!==JSON.stringify(qualifications(people.find(a=>a.obj===person.value))))show();
  }
+ function displayCode(code,owner){
+  byId('code-owner').textContent='Код входа · '+owner;
+  byId('new-engineer-code').value=code;byId('roster-code').hidden=false;
+  byId('issue-details').open=false;byId('copy-code').textContent='Скопировать код';
+  byId('roster-code').scrollIntoView({block:'nearest'});
+ }
+ byId('engineer-add').onclick=()=>{
+  person.value='+';show();
+  let index=1;while(occupied.includes('e-'+String(index).padStart(2,'0')))index++;
+  byId('roster-id').value='e-'+String(index).padStart(2,'0');
+  byId('engineer-name').focus();
+ };
+ byId('engineer-issue').onclick=async()=>{
+  if(saving||isNew())return;
+  const agent=people.find(a=>a.obj===person.value);if(!agent)return;
+  saving=true;form.inert=true;
+  try{
+   const result=await api('engineer-code',{obj:agent.obj});displayCode(result.code,agent.id);
+   status.textContent='Новый код выдан';
+  }catch(error){status.textContent=error.message}
+  finally{saving=false;form.inert=false}
+ };
+ byId('copy-code').onclick=async()=>{
+  const field=byId('new-engineer-code');
+  try{await navigator.clipboard.writeText(field.value);byId('copy-code').textContent='Скопировано'}
+  catch{field.focus();field.select();status.textContent='Код выделен для копирования'}
+ };
  person.onchange=()=>show();
- kind.onchange=()=>{byId('roster-qualifications').hidden=kind.value!=='engineer';markDirty()};
+ kind.onchange=()=>{byId('roster-qualifications').hidden=kind.value!=='engineer';byId('engineer-name-field').hidden=kind.value!=='engineer';save.textContent=kind.value==='engineer'?'Создать и выдать код':'Добавить участника';markDirty()};
  chapterList.onchange=models.onchange=byId('roster-id').oninput=markDirty;
  function addChapter(){
   const n=number.valueAsNumber;
@@ -72,13 +101,14 @@ export function rosterEditor(api,refresh,aircraft,defects){
   if(type==='engineer'&&number.value){addChapter();if(number.value)return}
   const data={obj,kind:type,ata:type==='engineer'?sorted(checked(chapterList).map(Number)):[]};
   if(type==='engineer')data.models=checked(models);
+  if(creating&&type==='engineer'&&byId('engineer-name').value.trim())data.name=byId('engineer-name').value.trim();
   if(creating)data.createOnly=true;else data.previous=baseline;
   saving=true;save.disabled=true;form.inert=true;status.textContent='Сохранение…';
   try{
    const result=await api('roster',data);await refresh();
    if(type==='engineer'&&people.some(a=>a.obj===obj))person.value=obj;
    show(creating?'Участник добавлен':'Допуски сохранены');
-   if(result.code){byId('new-engineer-code').value=result.code;byId('roster-code').hidden=false;}
+   if(result.code)displayCode(result.code,data.name||obj);
   }catch(err){status.textContent=err.message}
   finally{saving=false;form.inert=false;save.disabled=!dirty&&!isNew()}
  };

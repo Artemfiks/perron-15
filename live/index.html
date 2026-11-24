@@ -9,12 +9,12 @@
 <button id="pair">Подключить OwnTracks</button><button id="unpair">Отключить телефон</button>
 <div id="pair-info" hidden><p>В OwnTracks выберите режим HTTP, включите авторизацию и введите данные подключения.</p><label>Адрес<input id="native-url" readonly></label><label>Пользователь<input id="native-user" readonly></label><label>Пароль телефона<input id="native-pass" readonly type="password"></label><button id="show-pass">Показать пароль</button>
 <p>Выберите режим движения Move. Для iPhone укажите интервал 10 секунд, для Android — интервал Move 10 секунд. Эти настройки также доступны в файле для импорта.</p><a id="native-file" download="perron.otrc">Скачать настройки OwnTracks</a><p id="valid-until"></p></div><p id="native-status" role="status"></p></details></article><article><h2>Моё задание</h2><p id="myjob">Ожидание назначения</p><button id="done" hidden>Завершить задание</button></article></section>
-<section id="dispatch" hidden><small>ДИСПЕТЧЕРСКАЯ</small><div class="dispatch-title"><h1>Карта смены</h1><a href="#roster-panel">Настроить допуски ATA ↓</a></div><div class="layout"><div><article class="mapbox"><div class="maphead"><h2>Полигон ВДНХ</h2><span>10 зон</span></div><label class="mapfocus">Показать на карте<select id="focus"><option value="">Весь полигон</option></select></label><svg id="map" viewBox="-1080 -930 2230 2040" aria-label="Карта полигона с маршрутами инженеров"></svg><div class="legend"><span class="forbid">Проход запрещён</span><span class="allowed">Открытая дорожка</span><span class="closed">Перекрытая дорога</span><span class="way">Маршрут вызова</span><span class="position">Точка и точность GPS</span><span class="dest">Зона вызова</span></div><div id="positions"></div></article><form id="roster-panel" class="roster-panel" aria-labelledby="roster-title">
-  <div class="roster-heading"><h2 id="roster-title">Допуски инженеров</h2><a href="#dispatch">К карте ↑</a></div>
+<section id="dispatch" hidden><small>ДИСПЕТЧЕРСКАЯ</small><div class="dispatch-title"><h1>Карта смены</h1><a href="#roster-panel">Инженеры, допуски и коды ↓</a></div><div class="layout"><div><article class="mapbox"><div class="maphead"><h2>Полигон ВДНХ</h2><span>10 зон</span></div><label class="mapfocus">Показать на карте<select id="focus"><option value="">Весь полигон</option></select></label><svg id="map" viewBox="-1080 -930 2230 2040" aria-label="Карта полигона с маршрутами инженеров"></svg><div class="legend"><span class="forbid">Проход запрещён</span><span class="allowed">Открытая дорожка</span><span class="closed">Перекрытая дорога</span><span class="way">Маршрут вызова</span><span class="position">Точка и точность GPS</span><span class="dest">Зона вызова</span></div><div id="positions"></div></article><form id="roster-panel" class="roster-panel" aria-labelledby="roster-title">
+  <div class="roster-heading"><h2 id="roster-title">Инженеры смены и допуски</h2><a href="#dispatch">К карте ↑</a></div>
   <div class="roster-body">
     <label for="roster-person">Сотрудник смены</label>
-    <select id="roster-person"></select>
-    <div id="roster-new" hidden><label for="roster-id">Идентификатор</label><input type="text" id="roster-id" maxlength="32" placeholder="Например, e-03"><label for="roster-kind">Тип участника</label><select id="roster-kind"><option value="engineer">Инженер</option><option value="vehicle">Спецтранспорт</option><option value="aircraft">Воздушное судно</option></select></div>
+    <div class="roster-picker"><select id="roster-person"></select><button type="button" id="engineer-add">+ Добавить инженера</button></div>
+    <div id="roster-new" hidden><div id="engineer-name-field"><label for="engineer-name">Имя инженера</label><input id="engineer-name" maxlength="64" placeholder="Например, Иван Петров"></div><label for="roster-id">Идентификатор</label><input type="text" id="roster-id" maxlength="32" placeholder="Например, e-03"><label for="roster-kind">Тип участника</label><select id="roster-kind"><option value="engineer">Инженер</option><option value="vehicle">Спецтранспорт</option><option value="aircraft">Воздушное судно</option></select></div>
     <div id="roster-qualifications">
       <div class="roster-section"><h3 id="chapter-title">Главы ATA</h3><output id="chapter-count"></output></div>
       <div id="chapter-list" class="chapter-list" role="group" aria-labelledby="chapter-title"></div>
@@ -23,7 +23,10 @@
     </div>
   </div>
   <div class="roster-footer"><span id="roster-status" role="status"></span><button class="primary" id="roster-save">Сохранить допуски</button></div>
-  <div id="roster-code" hidden><label for="new-engineer-code">Код входа нового инженера</label><input id="new-engineer-code" readonly></div>
+  <div class="roster-access">
+    <details id="issue-details"><summary>Выдать новый код входа</summary><p>Прежний код перестанет действовать. Инженеру потребуется снова войти и подключить фоновый GPS, если он им пользовался.</p><button type="button" id="engineer-issue">Заменить код выбранного инженера</button></details>
+    <div id="roster-code" hidden><label for="new-engineer-code" id="code-owner">Код входа инженера</label><div class="code-actions"><input id="new-engineer-code" readonly autocomplete="off" spellcheck="false"><button type="button" id="copy-code">Скопировать код</button></div><p>Передайте код инженеру. На телефоне он выбирает роль «Инженер» и вводит этот код.</p></div>
+  </div>
 </form>
 </div><div><form id="call-form"><h2>Регистрация вызова</h2>
 <label for="zone">Место вызова</label><select id="zone"></select>
