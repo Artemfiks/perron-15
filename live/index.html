@@ -14,6 +14,10 @@
   <div class="roster-body">
     <label for="roster-person">Сотрудник смены</label>
     <div class="roster-picker"><select id="roster-person"></select><button type="button" id="engineer-add">+ Добавить инженера</button></div>
+    <div id="remove-member" hidden><button type="button" id="remove-start" aria-expanded="false" aria-controls="remove-confirm">Удалить инженера</button>
+      <div id="remove-confirm" hidden><strong id="remove-title"></strong><p>Код входа и фоновый GPS будут отключены.</p><button type="button" id="remove-apply">Подтвердить удаление</button> <button type="button" id="remove-cancel">Отмена</button></div>
+      <div id="remove-error" role="status"></div>
+    </div>
     <div id="roster-new" hidden><div id="engineer-name-field"><label for="engineer-name">Имя инженера</label><input id="engineer-name" maxlength="64" placeholder="Например, Иван Петров"></div><label for="roster-id">Идентификатор</label><input type="text" id="roster-id" maxlength="32" placeholder="Например, e-03"><label for="roster-kind">Тип участника</label><select id="roster-kind"><option value="engineer">Инженер</option><option value="vehicle">Спецтранспорт</option><option value="aircraft">Воздушное судно</option></select></div>
     <div id="roster-qualifications">
       <div class="roster-section"><h3 id="chapter-title">Главы ATA</h3><output id="chapter-count"></output></div>

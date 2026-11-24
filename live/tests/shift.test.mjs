@@ -61,6 +61,9 @@ test('Смена через HTTP: две роли инженера, два AOG, 
   assert.equal(pair[1].impact.remaining,null);
   await req('assign',d,{id:pair[1].id,time:pair[1].time,number:first.number,zone:first.zone},409);
   await req('assign',d,{id:pair[0].id,time:pair[0].time,number:first.number,zone:first.zone});
+  const originalEngineer={id:'Инженер 1',obj:'e-01',membershipId:null};
+  await req('remove-engineer',d,originalEngineer,409);
+  await req('remove-engineer',b,originalEngineer,403);
   await req('point',a,{stop:true});
   const alert=(await req('team',d)).find(row=>row.id==='Инженер 1').job;
   assert(alert.risk);assert(alert.alternate.inTime);
@@ -101,5 +104,21 @@ test('Смена через HTTP: две роли инженера, два AOG, 
   await login('engineer',reset.code);await login('engineer',builtIn.code);await login('engineer','test-b');
   const logText=await req('log.csv',d);assert(![extra.code,reset.code,builtIn.code].some(c=>logText.includes(c)));
   assert.deepEqual(await req('metrics',d),metrics);assert.equal((await req('calls',d))[0].number,next.number);
+  const extraAgent=(await req('agents',d)).find(x=>x.obj==='extra');
+  const coordinates=await login('engineer',reset.code);
+  const key=await req('background-key',coordinates,{});
+  await req('remove-engineer',d,extraAgent);
+  assert.equal(await req('me',coordinates),null);await denied(reset.code);
+  const gpsResponse=await fetch(base+'/api/owntracks',{method:'POST',headers:{'content-type':'application/json',authorization:'Basic '+Buffer.from(key.username+':'+key.password).toString('base64')},body:JSON.stringify(location)});
+  assert.equal(gpsResponse.status,401);
+  await req('roster',d,{obj:'extra',kind:'engineer',ata:[]});
+  await req('remove-engineer',d,extraAgent,409);
+  await req('remove-engineer',d,originalEngineer);
+  await req('remove-engineer',d,{id:'Инженер 2',obj:'e-02',membershipId:null});
+  await stop();await start();d=await login('dispatcher','test-d');
+  await denied('test-a');await denied('test-b');await denied(builtIn.code);
+  assert.deepEqual((await req('team',d)).map(x=>x.id),['extra']);
+  assert.deepEqual(await req('metrics',d),metrics);
+  assert((await req('log.csv',d)).includes('engineer-removed'));
  }finally{await stop();await rm(directory,{recursive:true,force:true})}
 });

@@ -125,13 +125,18 @@ if (!tls && !['127.0.0.1','localhost','::1'].includes(host) && process.env.TRUST
 }
 for(const [id,role,variable] of [['Диспетчер','dispatcher','DISPATCH_CODE'],['Инженер 1','engineer','ENGINEER_ONE_CODE'],['Инженер 2','engineer','ENGINEER_TWO_CODE']]){
   const obj=agents.find(a=>a.id===id)?.obj;
-  if(role==='engineer'&&[...extraAccounts.values()].some(account=>account.obj===obj))continue;
+  if(role==='engineer'&&(!obj||[...extraAccounts.values()].some(account=>account.obj===obj)))continue;
   const code=process.env[variable]||randomBytes(8).toString('hex');
   accounts.set(code,{id,role,obj});
 }
 function engineerCredential(agent){
  const code=randomBytes(8).toString('hex');
  return {code,key:digest(code),account:{id:agent.id,obj:agent.obj,role:'engineer'}};
+}
+function revokeEngineerAccess(obj){
+  for(const [key,account] of accounts)if(account.role==='engineer'&&account.obj===obj)accounts.delete(key);
+  for(const [key,entry] of sessions)if(entry.user.obj===obj)sessions.delete(key);
+  backgroundKeys.delete(obj);
 }
 const files = new Map(Object.entries({
   '/':['index.html','text/html'], '/ui.js':['ui.js','text/javascript'],
@@ -153,8 +158,6 @@ async function handle(req,res){
  const post = req.method === 'POST';
  if (!post && req.method !== 'GET') fail(405,'Метод недоступен');
  const token = /(?:^|; *)shift=([a-f0-9]+)/.exec(req.headers.cookie || '')?.[1];
- const session = sessions.get(token);
- const user = session?.until > Date.now() ? session.user : null;
  res.setHeader('Cache-Control','no-store');
  res.setHeader('X-Content-Type-Options','nosniff');
  const send = data => {res.setHeader('Content-Type','application/json; charset=utf-8'); res.end(JSON.stringify(data));};
@@ -166,6 +169,8 @@ async function handle(req,res){
    try{body=!raw&&path==='/api/owntracks'?{}:JSON.parse(raw);}catch{fail(400,'Ошибка данных');}
    if(!body || typeof body!=='object' || Array.isArray(body)) fail(400,'Ошибка данных');
  }
+ const session = sessions.get(token);
+ const user = session?.until > Date.now() ? session.user : null;
  if(path==='/api/login' && post){
    const ip=req.socket.remoteAddress;
    const recent=(attempts.get(ip)||[]).filter(t=>Date.now()-t<60000);
@@ -224,10 +229,28 @@ async function handle(req,res){
    for(const [key,account] of old)extraAccounts.set(key,account);
    throw error;
   }
-  for(const [key,account] of accounts)if(account.role==='engineer'&&account.obj===agent.obj)accounts.delete(key);
-  for(const [key,entry] of sessions)if(entry.user.obj===agent.obj)sessions.delete(key);
-  backgroundKeys.delete(agent.obj);
+  revokeEngineerAccess(agent.obj);
   return send({obj:agent.obj,code:issued.code});
+ }
+ if(path==='/api/remove-engineer'&&post&&user?.role==='dispatcher'){
+  const index=agents.findIndex(a=>a.kind==='engineer'&&a.obj===body.obj);
+  if(index<0)fail(404,'Инженера уже нет в смене');
+  const agent=agents[index];
+  if(body.id!==agent.id||body.membershipId!==(agent.membershipId??null))fail(409,'Состав смены изменился. Выберите инженера заново.');
+  const job=jobs.get(agent.id);
+  if(job)fail(409,'У инженера заявка № '+job.number+'. Сначала завершите её или верните в очередь.');
+  const credentials=[...extraAccounts].filter(([,account])=>account.obj===agent.obj);
+  agents.splice(index,1);
+  for(const [key] of credentials)extraAccounts.delete(key);
+  try{log('engineer-removed',user.id,null,{obj:agent.obj,id:agent.id})}
+  catch(error){
+   agents.splice(index,0,agent);
+   for(const [key,account] of credentials)extraAccounts.set(key,account);
+   throw error;
+  }
+  revokeEngineerAccess(agent.obj);
+  points.delete(agent.id);
+  return send({obj:agent.obj});
  }
  if(path==='/api/roster'&&post&&user?.role==='dispatcher'){
   const {obj,kind,ata}=body;
@@ -244,7 +267,7 @@ async function handle(req,res){
    if(typeof name!=='string'||!name.trim()||name.trim().length>64)fail(400,'Введите имя до 64 символов');
    const id=name.trim();
    if(id==='Диспетчер'||agents.some(agent=>agent.id===id))fail(409,'Участник с таким именем уже есть');
-   a={id,obj,kind,ata};if(body.models)a.models=body.models;
+   a={id,obj,kind,ata};if(kind==='engineer')a.membershipId=randomBytes(12).toString('hex');if(body.models)a.models=body.models;
    const issued=kind==='engineer'?engineerCredential(a):null;
    agents.push(a);
    if(issued)extraAccounts.set(issued.key,issued.account);

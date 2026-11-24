@@ -77,7 +77,7 @@ function draw(team,zone){
  const selected=focus.value;
  if([...focus.options].slice(1).map(o=>o.value).join('|')!==engineers.map(t=>t.obj).join('|')){
   focus.replaceChildren(new Option('Весь полигон',''),...engineers.map(t=>new Option(t.id,t.obj)));
-  focus.value=selected || (account.role==='engineer'?account.obj:'');
+  focus.value=engineers.some(t=>t.obj===selected)?selected:(account.role==='engineer'?account.obj:'');
  }
  map.replaceChildren();
  const hatch=shape('pattern',{id:'restricted',patternUnits:'userSpaceOnUse',width:12,height:12});
