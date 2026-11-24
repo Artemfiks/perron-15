@@ -1,3 +1,4 @@
+import {rosterEditor} from './roster.js';
 import {forbiddenObjects,positionStatus} from './access.mjs';
 import {network,xy,setOrigin,center} from './route.js';
 import {aircraft,defects,priorities,describe} from './calls.mjs';
@@ -12,6 +13,7 @@ async function api(name,data){
  if(!res.ok){if(res.status===401 && account)location.reload();throw Error(result.error);}
  return result;
 }
+const roster=rosterEditor(api,()=>refresh(),aircraft,defects);
 async function load(user){
  account=user;
  for(const [id,show] of [['entry',!user],['engineer',user?.role==='engineer'],['dispatch',user?.role==='dispatcher'],['logout',!!user]])el(id).hidden=!show;
@@ -157,6 +159,7 @@ async function refresh(prefer){
    return;
   }
   const [team,calls,agents,remarks,closed]=await Promise.all([api('team'),api('calls'),api('agents'),api('remarks'),api('roads')]);if(seq!==revision)return;updateRoads(closed);
+  roster.update(agents);
   const selected=el('remark').value;el('remark').replaceChildren(new Option('Регистрация вручную',''),...remarks.map(r=>new Option(r.author+' · '+r.note,r.id)));if(remarks.some(r=>r.id===selected))el('remark').value=selected;
   const picker=el('pending');
   const current=calls.find(c=>c.number===(prefer??Number(picker.value)))??calls[0];
@@ -232,7 +235,6 @@ control('Приём имитатора без ключа',async()=>{const enable
 control('Вернуть заявку в очередь',async()=>{const list=(await api('history')).filter(c=>!['pending','done'].includes(c.status));if(!list.length)return notice('Нет заявок для переназначения');const number=Number(prompt(list.map(c=>'№ '+c.number+' · '+labels[c.status]).join('\n')+'\nВведите номер'));if(!number)return;const reason=prompt('Причина решения старшего смены');if(reason){await api('control',{number,reason});await refresh(number)}});
 control('Ключ имитатора',async()=>{prompt('Authorization: Bearer <ключ>. POST /api/v1/track',(await api('track-key')).key)});
 control('GPS телефона в машине',async()=>{const obj=prompt('ID спецтранспорта','v-01');if(!obj)return;const b=await api('beacon',{obj});prompt('Откройте ссылку на телефоне в машине. Действует 12 часов.',location.origin+'/beacon#'+new URLSearchParams(b))});
-control('Состав и допуски',async()=>{const obj=prompt('ID агента (например e-01, v-01 или RA-73142)');if(!obj)return;const kind=prompt('Тип: engineer, vehicle, aircraft','engineer');if(!kind)return;const at=kind==='engineer'?prompt('Главы ATA через запятую','79,34'):'';if(at===null)return;const models=kind==='engineer'?prompt('Типы ВС через запятую',aircraft.join(',')):null;if(kind==='engineer'&&models===null)return;const result=await api('roster',{obj,kind,models:models?.split(',').map(m=>m.trim()),ata:at.split(',').filter(Boolean).map(Number)});if(result.code)prompt('Код нового инженера',result.code);else notice('Параметры агента сохранены');});
 control('Закрытые дороги',async()=>{const ids=prompt('ID закрытых участков через запятую. Пустое поле открывает дороги',(await api('roads')).join(','));if(ids!==null){await api('roads',{ids:ids.split(',').map(v=>v.trim()).filter(Boolean).map(Number)});await refresh()}});
 
 

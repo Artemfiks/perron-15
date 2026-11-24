@@ -129,6 +129,7 @@ for (const [id,role] of [['Диспетчер','dispatcher'],['Инженер 1'
 }
 const files = new Map(Object.entries({
   '/':['index.html','text/html'], '/ui.js':['ui.js','text/javascript'],
+  '/roster.js':['roster.js','text/javascript'],
   '/access.mjs':['access.mjs','text/javascript'],
   '/route.js':['route.js','text/javascript'], '/style.css':['style.css','text/css'],
   '/scenarios':['scenarios.html','text/html'],
@@ -209,6 +210,11 @@ async function handle(req,res){
   if(typeof obj!=='string'||!/^[-\w]{1,32}$/.test(obj)||!['engineer','vehicle','aircraft'].includes(kind)||!Array.isArray(ata)||ata.some(n=>!Number.isInteger(n)||n<1||n>99))fail(400,'Проверьте идентификатор, тип и допуски');
   let a=agents.find(a=>a.obj===obj);if(a&&a.kind!==kind)fail(409,'Тип существующего объекта изменить нельзя');
   let code=null;
+  if(body.createOnly&&a)fail(409,'Этот идентификатор уже занят');
+  if(body.previous){
+   const same=(left,right)=>Array.isArray(right)&&JSON.stringify([...left].sort())===JSON.stringify([...right].sort());
+   if(!a||!same(a.ata||[],body.previous.ata)||!same(a.models??aircraft,body.previous.models))fail(409,'Другой диспетчер изменил допуски. Выберите сотрудника заново и проверьте изменения.');
+  }
   if(body.models!==undefined&&(!Array.isArray(body.models)||body.models.some(m=>!aircraft.includes(m))))fail(400,'Проверьте типы ВС');
   if(!a){a={id:obj,obj,kind};agents.push(a);if(kind==='engineer'){code=randomBytes(12).toString('hex');extraAccounts.set(digest(code),{id:obj,obj,role:kind})}}
   if(body.models)a.models=body.models;
