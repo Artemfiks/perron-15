@@ -47,6 +47,8 @@ test('Смена через HTTP: две роли инженера, два AOG, 
   const vehiclePoint=async obj=>fetch(base+'/api/v1/track',{method:'POST',headers:{'content-type':'application/json',authorization:'Bearer '+beacon.key},body:JSON.stringify(gps(obj,1))});
   assert.equal((await vehiclePoint('v-01')).status,200);assert.equal((await vehiclePoint('e-01')).status,401);
   await req('competition-feed',d,{enable:true});await req('v1/track',null,gps('RA-73142',0));await req('competition-feed',d,{enable:false});await req('v1/track',null,gps('RA-73142',0),401);
+  const row={ref:'ATLB-TEST',tail:'TEST-01',ata:34,mel:'C',until:new Date(Date.now()+86400000).toISOString(),description:'Навигация'};
+  await req('atlb',d,{records:[row]});await req('atlb',a,{records:[row]},403);
   const remark=await req('remarks',a,{note:'Замечание с борта'});assert.equal((await req('remarks',d))[0].id,remark.id);
   const form={zone:zones[0].properties.id,priority:'A',aircraft:'A320',tail:'TEST-01'};
   for(const session of [a,b])await req('availability',session,{minutes:1});
@@ -61,7 +63,7 @@ test('Смена через HTTP: две роли инженера, два AOG, 
   assert.equal(pair[0].impact.engineer,'Инженер 2');
   assert.equal(pair[1].impact.remaining,null);
   await req('availability',a,{minutes:0});
-  assert.equal((await req('job',a)).number,first.number);
+  assert.equal((await req('job',a)).number,first.number);assert.equal((await req('job',a)).atlbHistory[0].ref,row.ref);
   const originalEngineer={id:'Инженер 1',obj:'e-01',membershipId:null};
   await req('remove-engineer',d,originalEngineer,409);
   await req('remove-engineer',b,originalEngineer,403);
@@ -70,7 +72,11 @@ test('Смена через HTTP: две роли инженера, два AOG, 
   assert(alert.risk);assert(alert.alternate.inTime);
   assert.equal(alert.alternate.deadline,first.createdAt+900000);
   assert.equal(alert.alternate.marginMs,alert.alternate.deadline-alert.alternate.eta);
+  const riskLog=await req('log.csv',d);
+  const warnings=riskLog.split('\r\n').filter(row=>row.includes('"forecast-risk"')&&row.includes('""risk"":true'));
+  assert(warnings.some(row=>Date.parse(row.split('","')[1])<first.createdAt+900000));
   await req('roster',d,{obj:'e-02',kind:'engineer',ata:[29]});
+  assert.equal((await req('team',d)).find(x=>x.id==='Инженер 1').job.alternate,null);
   await req('v1/track',a,gps('e-01',1));await req('v1/track',b,gps('e-02',1));
   await req('availability',b,{minutes:0});assert.equal((await req('job',b)).number,second.number);
   const action=(s,c,action,status=200)=>req('action',s,{number:c.number,action},status);
@@ -79,16 +85,23 @@ test('Смена через HTTP: две роли инженера, два AOG, 
    await req('v1/track',s,gps(obj,0));assert.equal((await req('job',s)).status,'arrived');
    await action(s,c,'start');await req('decision',s,{number:c.number,decision:'AOG'});
   }
+  const staff=await req('staff-code',d,{role:'dispatcher'}),operator=await login('dispatcher',staff.code);
+  await req('control',operator,{number:first.number,reason:'Смена',confirmed:true},403);
+  await req('control',d,{number:first.number,reason:'Без подтверждения'},403);
+  await req('decision',operator,{number:first.number,decision:'AOG'},403);
   const current=await req('team',d);assert.equal(current.filter(e=>e.job?.aog).length,2);assert(current.every(e=>e.job.aircraftNear==='RA-73142'));
   await action(b,second,'wait');assert.equal(await req('job',b),null);
   await req('control',a,{number:first.number,reason:'Запчасть'},403);
+  const competing=await req('calls',d,{...form,defect:'HYD'});
+  assert.equal((await req('job',b)).number,competing.number);
+  assert.equal((await req('job',a)).status,'working');await action(b,competing,'reject');
   await req('control',d,{number:second.number,reason:'Деталь доставлена'});
   assert.equal((await req('job',b)).number,second.number);await action(b,second,'accept');await req('v1/track',b,gps('e-02',0));
   await action(b,second,'start');await req('decision',b,{number:second.number,decision:'B',until:new Date(Date.now()+86400000).toISOString()});
   await action(b,second,'done');await action(a,first,'done');
   await req('point',a,{stop:true});await req('point',b,{stop:true});
   const next=await req('calls',d,{...form,defect:'NAV'});assert.equal(next.melHistory[0].number,second.number);
-  const metrics=await req('metrics',d);assert.equal(metrics.arrived,2);assert.equal(metrics.onTime,2);assert.equal(metrics.withoutArrival,1);assert(metrics.meanSelectionMs>=0);
+  const metrics=await req('metrics',d);assert.equal(metrics.arrived,2);assert.equal(metrics.onTime,2);assert.equal(metrics.withoutArrival,2);assert(metrics.meanSelectionMs>=0);
   const csv=await req('log.csv',d);for(const k of ['registered','remark','candidates','assigned','arrival','route-update','reassignment','engineering-decision','track-error','aircraft-schedule'])assert(csv.includes(k),k);
   const extra=await req('roster',d,{obj:'extra',kind:'engineer',ata:[34],models:['A320']});
   const extraSession=await login('engineer',extra.code);
@@ -103,7 +116,9 @@ test('Смена через HTTP: две роли инженера, два AOG, 
   await denied(extra.code);await denied('test-a');
   await login('engineer',reset.code);await login('engineer',builtIn.code);await login('engineer','test-b');
   const logText=await req('log.csv',d);assert(![extra.code,reset.code,builtIn.code].some(c=>logText.includes(c)));
-  assert.deepEqual(await req('metrics',d),metrics);assert.equal((await req('calls',d))[0].number,next.number);
+  assert.deepEqual(await req('metrics',d),metrics);assert((await req('calls',d)).some(c=>c.number===next.number));
+  const catalog=await req('catalog',d);
+  assert.deepEqual(catalog[first.defect],['Тест навигации','ATA 34']);
   const extraAgent=(await req('agents',d)).find(x=>x.obj==='extra');
   const coordinates=await login('engineer',reset.code);
   const key=await req('background-key',coordinates,{});

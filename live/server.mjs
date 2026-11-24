@@ -20,15 +20,17 @@ const roads=layer('roads');
 const extraAccounts=new Map();
 const digest=s=>createHash('sha256').update(s).digest('hex');
 const remarks=new Map();
+const atlb=new Map();
 let feedUntil=0;
 const history=new Map();
 const offerMs=Number(process.env.OFFER_TIMEOUT_MS)||60000;
 function deadlineBreach(call,now){
- if(!call.breachAt&&now>call.createdAt+900000){
+ if(!(call.firstArrivalAt<=call.createdAt+900000)&&!call.breachAt&&now>call.createdAt+900000){
   call.breachAt=now;log('deadline-breach','Система',call,{deadline:call.createdAt+900000,observedAt:now,arrivalConfirmed:!!call.arrivedAt});
  }
 }
 function onPosition(agent,point){
+ db.record('gps-fix',agent.id,jobs.get(agent.id),{obj:agent.obj,lat:point.lat,lon:point.lon,accuracy:point.accuracy,fixAt:point.time});
  if(agent.kind==='vehicle')for(const [id,c] of jobs){
   if(c.arrivedAt)continue;
   const r=routing.plan(id,c);db.record('route-update',id,c,{trigger:agent.obj,forecast:r?Date.now()+r.minutes*60000:null,mode:r?.mode});
@@ -41,6 +43,10 @@ function onPosition(agent,point){
    if(Math.hypot(x-u,y-w)<=12){call.boarded=true;log('vehicle-pickup',agent.id,call,{vehicle:call.vehicle})}
   }
  }
+ if(call?.boarded&&!call.disembarked&&call.status==='enroute'&&(!call.kit||call.kitCollected)){
+  const drop=routing.plan(agent.id,call)?.dropoff,here=xy([point.lon,point.lat]);
+  if(drop&&Math.hypot(here[0]-drop[0],here[1]-drop[1])<=8){call.disembarked=true;log('vehicle-dropoff',agent.id,call,{vehicle:call.vehicle})}
+ }
  if(call&&!call.arrivedAt){const r=routing.plan(agent.id,call),forecast=r?point.time+r.minutes*60000:null;
   db.record('route-update',agent.id,call,{forecast,mode:r?.mode,meters:r?.meters});
   if(!forecast||forecast>call.createdAt+900000)db.record('risk','Диспетчер',call,{forecast,deadline:call.createdAt+900000});
@@ -50,7 +56,12 @@ function onPosition(agent,point){
  const arrivalZone=zoneId!=null&&zones.find(z=>z.properties.id===zoneId);
  if(arrivalZone&&(!call.kit||call.kitCollected)&&point.time>=call.acceptedAt&&Date.now()-point.time<=60000&&point.accuracy<=50&&insideZone([point.lon,point.lat],arrivalZone)){
    transition(call,'arrive',point.time);
-   log('arrival',agent.id,call,{arrivedAt:point.time,inLimit:call.inLimit,elapsedSeconds:(point.time-call.createdAt)/1000});
+   if(!call.firstArrivalAt){
+    call.firstArrivalAt=point.time;log('arrival',agent.id,call,{arrivedAt:point.time,inLimit:call.inLimit,elapsedSeconds:(point.time-call.createdAt)/1000});
+   }else{
+    call.inLimit=call.firstArrivalAt-call.createdAt<=900000;
+    log('return-arrival',agent.id,call,{arrivedAt:point.time,firstArrivalAt:call.firstArrivalAt});
+   }
    if(!call.inLimit)deadlineBreach(call,point.time);
    else if(call.breachAt){delete call.breachAt;log('deadline-confirmed-on-time',agent.id,call,{fixAt:point.time})}
  }
@@ -60,8 +71,8 @@ function activeView(id){
  if(!c)return null;
  const route=routing.plan(id,c);
  const now=Date.now(),eta=route?forecast(c,route.minutes,now).eta:null;
- const risk=!c.arrivedAt&&(!eta||eta>c.createdAt+900000);
- const replacement=risk?candidates(c,now).find(x=>x.route):null;
+ const risk=!c.firstArrivalAt&&!c.arrivedAt&&(!eta||eta>c.createdAt+900000);
+ const replacement=risk?candidates(c,now).find(x=>x.route&&x.id!==id&&!jobs.has(x.id)):null;
  const alternate=replacement?{id:replacement.id,minutes:replacement.route.minutes,busyUntil:replacement.busyUntil,...replacement.forecast}:null;
  const aircraftNear=p&&agents.filter(a=>a.kind==='aircraft').find(a=>{
   const q=points.get(a.id);if(!q||Date.now()-q.time>60000||Date.now()-p.time>60000)return false;
@@ -71,7 +82,8 @@ function activeView(id){
  const riskKey=risk?JSON.stringify([alternate?.id,alternate?.inTime]):'';
  if(riskKey!==(c.lastRiskKey||'')){c.lastRiskKey=riskKey;log('forecast-risk',id,c,{risk,eta,deadline:c.createdAt+900000,alternate})}
  const destination=routing.destination(c);
- return {...c,route,point:p,eta,risk,alternate,arrivalZone:destination.zone,targetSource:destination.source,aircraftNear:aircraftNear?.id};
+ const atlbHistory=[...atlb.values()].filter(r=>r.tail===c.tail?.toUpperCase()&&r.ata===c.ata);
+ return {...c,atlbHistory,route,point:p,eta,risk,alternate,arrivalZone:destination.zone,targetSource:destination.source,aircraftNear:aircraftNear?.id};
 }
 
 const accounts = new Map();
@@ -114,14 +126,14 @@ function clearWorkEstimate(engineer,number){
  const agent=agents.find(a=>a.id===engineer);
  if(agent?.availabilityJob===number){agent.busyUntil=0;agent.availabilityJob=null}
 }
-function releaseOffer(call,engineer,outcome,now){
+function releaseOffer(call,engineer,outcome,now,requestId){
  const offer=call.offers?.at(-1);
  if(offer){offer.outcome=outcome;offer.endedAt=now}
  jobs.delete(engineer);call.status='pending';pending.set(call.number,call);
- delete call.vehicle;delete call.store;delete call.boarded;delete call.replyBy;
- log('offer-'+outcome,engineer,call,{at:now});
+ delete call.vehicle;delete call.store;delete call.boarded;delete call.disembarked;delete call.replyBy;
+ log('offer-'+outcome,engineer,call,{at:now,requestId});
 }
-function processQueue(){
+function processQueue(manual){
  const now=Date.now();
  for(const [id,c] of jobs){
   if(!c.arrivedAt)deadlineBreach(c,now);
@@ -129,13 +141,22 @@ function processQueue(){
  }
  for(const c of [...pending.values()].sort(queueOrder)){
   deadlineBreach(c,now);
-  const pick=rank(c)[0];
+  const ranking=rank(c);
+  const explicit=manual?.number===c.number;
+  const pick=explicit?ranking.find(r=>r.id===manual.engineer):ranking[0];
+  const risk=!c.firstArrivalAt&&(!pick?.forecast||!pick.forecast.inTime);
+  if(risk!==!!c.queueRisk){
+   c.queueRisk=risk;
+   log('forecast-risk','Диспетчер',c,{stage:'queue',risk,deadline:c.createdAt+900000,eta:pick?.forecast?.eta??null,engineer:pick?.id,reason:pick?.reason});
+  }
+  if(c.manualFirst&&!c.offers?.length&&!explicit)continue;
   if(!pick?.route||pick.busyUntil>now||jobs.has(pick.id))continue;
   c.status='assigned';c.assignedAt=now;c.replyBy=now+offerMs;
   c.vehicle=pick.route.vehicle;c.store=pick.route.store;c.firstEta??=pick.forecast.eta;
-  (c.offers??=[]).push({engineer:pick.id,at:now,replyBy:c.replyBy,outcome:'offered'});
+  const comparison=ranking.map(r=>({id:r.id,reason:r.reason,ata:c.ata,qualified:!!r.route,mode:r.route?.mode,alternatives:r.route?.alternatives,meters:r.route?.meters,waitMinutes:r.waitMinutes,forecast:r.forecast,impact:r.impact}));
+  (c.offers??=[]).push({comparison,engineer:pick.id,at:now,replyBy:c.replyBy,outcome:'offered'});
   jobs.set(pick.id,c);pending.delete(c.number);
-  log('assigned','Система',c,{engineer:pick.id,route:pick.route.mode,forecast:pick.forecast.eta,replyBy:c.replyBy,target:routing.destination(c).source});
+  log('assigned',explicit?manual.actor:'Система',c,{engineer:pick.id,route:pick.route.mode,meters:pick.route.meters,minutes:pick.route.minutes,alternatives:pick.route.alternatives,forecast:pick.forecast.eta,replyBy:c.replyBy,target:routing.destination(c).source});
  }
 }
 const pending = new Map();
@@ -144,6 +165,7 @@ const dbFile=process.env.STATE_DB||join(process.env.RENDER?tmpdir():homedir(),'.
 mkdirSync(dirname(dbFile),{recursive:true});const db=journal(dbFile);
 const saved=db.restore();
 if(saved){
+ for(const row of saved.atlb||[])atlb.set(row.ref,row);
  if(saved.agents)agents.splice(0,agents.length,...saved.agents);
  for(const [key,a] of saved.extraAccounts||[])extraAccounts.set(key,a);
  for(const r of saved.remarks||[])remarks.set(r.id,r);
@@ -162,7 +184,7 @@ if(saved){
  for(const [k,v] of Object.entries(saved.defects||{}))defects[k]=v;
 }
 function log(kind,actor,c,detail={}){
- db.record(kind,actor,c,detail,{calls:[...history.values()],pending:[...pending.keys()],jobs:[...jobs].map(([id,j])=>[id,j.number]),closed:routing.closed,defects,agents,extraAccounts:[...extraAccounts],remarks:[...remarks.values()]});
+ db.record(kind,actor,c,detail,{calls:[...history.values()],pending:[...pending.keys()],jobs:[...jobs].map(([id,j])=>[id,j.number]),closed:routing.closed,defects,agents,extraAccounts:[...extraAccounts],atlb:[...atlb.values()],remarks:[...remarks.values()]});
 }
 const backgroundKeys=new Map();
 const attempts = new Map();
@@ -176,11 +198,11 @@ for(const [id,role,variable] of [['Диспетчер','dispatcher','DISPATCH_CO
   const obj=agents.find(a=>a.id===id)?.obj;
   if(role==='engineer'&&(!obj||[...extraAccounts.values()].some(account=>account.obj===obj)))continue;
   const code=process.env[variable]||randomBytes(8).toString('hex');
-  accounts.set(code,{id,role,obj});
+  accounts.set(code,{id,role,obj,...(role==='dispatcher'?{supervisor:true}:{})});
 }
 function engineerCredential(agent){
  const code=randomBytes(8).toString('hex');
- return {code,key:digest(code),account:{id:agent.id,obj:agent.obj,role:'engineer'}};
+ return {code,key:digest(code),account:{id:agent.id,obj:agent.obj,membershipId:agent.membershipId,role:'engineer'}};
 }
 function revokeEngineerAccess(obj){
   for(const [key,account] of accounts)if(account.role==='engineer'&&account.obj===obj)accounts.delete(key);
@@ -189,6 +211,7 @@ function revokeEngineerAccess(obj){
 }
 const files = new Map(Object.entries({
   '/':['index.html','text/html'], '/ui.js':['ui.js','text/javascript'],
+  '/outbox.js':['outbox.js','text/javascript'], '/catalog.json':['catalog.json','application/json'],
   '/roster.js':['roster.js','text/javascript'],
   '/access.mjs':['access.mjs','text/javascript'],
   '/route.js':['route.js','text/javascript'], '/style.css':['style.css','text/css'],
@@ -225,11 +248,17 @@ async function handle(req,res){
    const recent=(attempts.get(ip)||[]).filter(t=>Date.now()-t<60000);
    if(recent.length>=12)fail(429,'Попробуйте через минуту');
    const account=typeof body.code==='string'&&(accounts.get(body.code)||extraAccounts.get(digest(body.code)));
-   if(!account || account.role!==body.role){attempts.set(ip,[...recent,Date.now()]);fail(401,'Проверьте роль и код смены');}
+   if(!account || (account.role==='mcc'?'dispatcher':account.role)!==body.role){attempts.set(ip,[...recent,Date.now()]);fail(401,'Проверьте роль и код смены');}
    const sid=randomBytes(32).toString('hex');
    sessions.set(sid,{user:account,until:Date.now()+12*3600000});
    res.setHeader('Set-Cookie','shift='+sid+'; HttpOnly; SameSite=Strict; Path=/; Max-Age=43200'+(tls || process.env.TRUST_HTTPS_PROXY==='yes'?'; Secure':''));
-   return send(account);
+   return send({...account,shiftId:db.shiftId});
+ }
+ if(path==='/api/staff-code'&&post&&user?.supervisor){
+  if(!['dispatcher','mcc'].includes(body.role))fail(400,'Укажите рабочее место');
+  const code=randomBytes(8).toString('hex'),role=body.role;
+  const worker={role,id:(role==='mcc'?'MCC':'Диспетчер')+' '+randomBytes(3).toString('hex')};
+  extraAccounts.set(digest(code),worker);log('staff-code-issued',user.id,null,{id:worker.id,role});return send({code,id:worker.id});
  }
  if(path==='/api/background-key'&&post&&user?.role==='engineer'){
   if(body.revoke===true){backgroundKeys.delete(user.obj);return send({});}
@@ -249,7 +278,7 @@ async function handle(req,res){
   }
   return send([]);
  }
- if(path==='/api/me' && !post)return send(user);
+ if(path==='/api/me' && !post)return send(user?{...user,shiftId:db.shiftId}:null);
  if(path==='/api/track-key' && !post && user?.role==='dispatcher')return send({key:feedKey});
  if(path==='/api/beacon'&&post&&user?.role==='dispatcher'){
   const a=agents.find(a=>a.obj===body.obj&&a.kind==='vehicle');if(!a)fail(400,'Укажите ID транспорта');
@@ -260,9 +289,10 @@ async function handle(req,res){
   const beacon=beacons.get(req.headers.authorization?.slice(7));
   const external=req.headers.authorization==='Bearer '+feedKey||(!user&&Date.now()<feedUntil)||(beacon?.until>Date.now()&&body.obj===beacon.obj&&!Object.hasOwn(body,'points'));
   if(!external&&!user)fail(401,'Нужен ключ источника');
+  if(!external&&user.role==='mcc')fail(403,'Рабочее место MCC не передаёт GPS');
   if(!external&&user.role==='engineer'&&(body.obj!==user.obj||Object.hasOwn(body,'points')))fail(403,'Доступ только к своей позиции');
   try{const result=track(body,agents,points,onPosition);for(const r of [].concat(result))if(!r.applied)db.record('track-not-applied','Источник',null,r);return send(result)}
-  catch(e){db.record('track-error','Источник',null,{message:e.message});throw e}
+  catch(e){throw e}
  }
  if(path==='/api/agents'&&!post&&user)return send(agents.filter(a=>user.role==='dispatcher'||a.id===user.id||a.kind!=='engineer').map(a=>({...a,point:points.get(a.id)})));
  if(path==='/api/engineer-code'&&post&&user?.role==='dispatcher'){
@@ -329,7 +359,10 @@ async function handle(req,res){
  }
  if(path==='/api/roads'&&user&&(!post||user.role==='dispatcher')){
   if(post){if(!Array.isArray(body.ids)||body.ids.some(i=>!roads.features.some(f=>f.properties.id===i)))fail(400,'Проверьте ID рёбер');routing.close(body.ids)}
-  if(post)log('road-closures',user.id,null,{ids:routing.closed});
+  if(post){
+   log('road-closures',user.id,null,{ids:routing.closed});
+   for(const [id,c] of jobs)if(!c.arrivedAt){const job=activeView(id);db.record('route-update',id,c,{trigger:'road-closures',forecast:job.eta,meters:job.route?.meters})}
+  }
   return send(routing.closed);
  }
  if(path==='/api/rank'&&user?.role==='dispatcher'&&!post){
@@ -350,29 +383,49 @@ async function handle(req,res){
  if(path==='/api/log.csv'&&!post&&user.role==='dispatcher'){res.setHeader('Content-Type','text/csv;charset=utf-8');res.setHeader('Content-Disposition','attachment; filename="perron-events.csv"');return res.end(db.csv())}
  if(path==='/api/team' && !post && user.role==='dispatcher')return send(agents.filter(a=>a.kind==='engineer').map(a=>({id:a.id,point:points.get(a.id),job:activeView(a.id)})));
  if(path==='/api/metrics'&&!post&&user.role==='dispatcher')return send(db.metrics());
- if(path==='/api/remarks'&&user.role==='engineer'&&post){
+ const receipt=body.requestId;
+ if(receipt!==undefined&&user?.role==='engineer'&&post){
+  if(typeof receipt!=='string'||!/^[-a-z0-9]{36}$/i.test(receipt))fail(400,'Некорректный номер действия');
+  if(body.shiftId!==db.shiftId)fail(409,'Смена изменилась');
+  if(db.received(user.id,receipt))return send({delivered:true});
+ }
+ if(path==='/api/mcc'&&user.role==='mcc'){
+  if(!post)return send([...remarks.values()].filter(r=>!r.call&&!r.reviewedAt));
+  const r=remarks.get(body.id);
+  if(!r||r.reviewedAt||r.call)fail(409,'Замечание уже обработано');
+  r.reviewedAt=Date.now();r.reviewer=user.id;log('mcc-reviewed',user.id,null,{remarkId:r.id,note:r.note});return send(r);
+ }
+ if(path==='/api/remarks'&&['engineer','mcc'].includes(user.role)&&post){
   const note=typeof body.note==='string'?body.note.trim():'';
   if(!note||note.length>300)fail(400,'Введите до 300 символов');
-  const r={id:randomBytes(6).toString('hex'),author:user.id,note,at:Date.now()};remarks.set(r.id,r);log('remark',user.id,null,r);return send(r);
+  const r={id:randomBytes(6).toString('hex'),author:user.id,requiresReview:user.role==='mcc',source:user.role==='mcc'&&body.source==='Экипаж'?'Экипаж':'Сотрудник',note,at:Date.now()};remarks.set(r.id,r);log('remark',user.id,null,{...r,requestId:receipt});return send(r);
  }
- if(path==='/api/remarks'&&user.role==='dispatcher'&&!post)return send([...remarks.values()].filter(r=>!r.call));
+ if(path==='/api/remarks'&&user.role==='dispatcher'&&!post)return send([...remarks.values()].filter(r=>!r.call&&(!r.requiresReview||r.reviewedAt)));
  if(path==='/api/catalog'&&!post)return send(defects);
  if(path==='/api/availability'&&post&&user.role==='engineer'){
   const minutes=body.minutes;
   if(!Number.isInteger(minutes)||minutes<0||minutes>1440)fail(400,'Введите от 0 до 1440 минут');
   const agent=agents.find(a=>a.obj===user.obj&&a.kind==='engineer');
-  agent.busyUntil=minutes?Date.now()+minutes*60000:0;
+  const statedAt=Number.isFinite(body.statedAt)?Math.min(Date.now(),body.statedAt):Date.now();
+  agent.busyUntil=minutes?statedAt+minutes*60000:0;
   const call=jobs.get(agent.id);
   agent.availabilityJob=minutes&&call?.status==='working'?call.number:null;
-  if(minutes&&call?.status==='assigned')releaseOffer(call,agent.id,'busy',Date.now());
-  log('availability',agent.id,null,{busyUntil:agent.busyUntil,minutes});
+  if(agent.busyUntil>Date.now()&&call?.status==='assigned')releaseOffer(call,agent.id,'busy',Date.now());
+  log('availability',agent.id,null,{requestId:receipt,busyUntil:agent.busyUntil,minutes});
   processQueue();return send({busyUntil:agent.busyUntil});
+ }
+ if(path==='/api/assign'&&post&&user.role==='dispatcher'){
+  const c=pending.get(body.number);
+  if(!c)fail(409,'Назначение уже изменилось');
+  processQueue({number:c.number,engineer:body.engineer,actor:user.id});
+  if(jobs.get(body.engineer)!==c)fail(409,'Инженер сейчас недоступен');
+  return send({number:c.number});
  }
  if(path==='/api/dispatch'&&!post&&user.role==='dispatcher'){
   return send([...history.values()].sort((a,b)=>b.number-a.number).map(c=>{
    const destination=routing.destination(c);
    const {number,createdAt,zone,aircraft,tail,description,defect,priority,aog,mel,status,offers,arrivedAt,inLimit,breachAt}=c;
-   return {number,createdAt,zone,aircraft,tail,description,defect,priority,aog,mel,status,offers,arrivedAt,inLimit,breachAt,targetSource:destination.source,arrivalZone:destination.zone};
+   return {queueRisk:c.queueRisk,manualFirst:c.manualFirst,number,createdAt,zone,aircraft,tail,description,defect,priority,aog,mel,status,offers,arrivedAt,inLimit,breachAt,targetSource:destination.source,arrivalZone:destination.zone};
   }));
  }
  if(path==='/api/job' && !post && user.role==='engineer')return send(activeView(user.id));
@@ -380,24 +433,36 @@ async function handle(req,res){
   const c=jobs.get(user.id);if(!c||c.number!==body.number||!c.kit||typeof body.collected!=='boolean')fail(409,'Проверьте задание и комплект');
   c.kitCollected=body.collected;
   if(!c.kitCollected)c.store=routing.plan(user.id,c)?.store;
-  log('kit-status',user.id,c,{collected:c.kitCollected});return send(c);
+  log('kit-status',user.id,c,{requestId:receipt,collected:c.kitCollected});return send(c);
+ }
+ if(path==='/api/atlb'&&post&&user.role==='dispatcher'){
+  const rows=body.records;
+  if(!Array.isArray(rows)||!rows.length||rows.length>500)fail(400,'Нужен массив записей ATLB');
+  const seen=new Set();
+  for(const r of rows){
+   if(!r||typeof r.ref!=='string'||!r.ref.trim()||r.ref.length>80||typeof r.tail!=='string'||!r.tail.trim()||r.tail.length>24||!Number.isInteger(r.ata)||r.ata<1||r.ata>99||!['A','B','C','D'].includes(r.mel)||!Number.isFinite(Date.parse(r.until))||typeof r.description!=='string'||!r.description.trim()||r.description.length>300)fail(400,'Проверьте поля записи ATLB');
+   if(seen.has(r.ref)||atlb.has(r.ref))fail(409,'Номер записи ATLB уже есть');seen.add(r.ref);
+  }
+  for(const {ref,tail,ata,mel,until,description} of rows)atlb.set(ref,{ref,tail:tail.trim().toUpperCase(),ata,mel,until,description});
+  log('atlb-imported',user.id,null,{refs:[...seen]});return send({imported:rows.length});
  }
  if(path==='/api/decision'&&post&&user.role==='engineer'){
   const c=jobs.get(user.id);if(!c||c.number!==body.number||c.status!=='working')fail(409,'Решение доступно при выполнении работ');
   if(!['AOG','A','B','C','D'].includes(body.decision))fail(400,'Неизвестная категория');
   if(body.decision!=='AOG'&&!(Date.parse(body.until)>Date.now()))fail(400,'Укажите будущий срок отложения');
   c.aog=body.decision==='AOG';c.mel=c.aog?null:body.decision;c.until=c.aog?null:body.until;
-  log('engineering-decision',user.id,c,{aog:c.aog,mel:c.mel,until:c.until});return send(c);
+  log('engineering-decision',user.id,c,{requestId:receipt,aog:c.aog,mel:c.mel,until:c.until});return send(c);
  }
  if(path==='/api/control'&&post&&user.role==='dispatcher'){
   const c=history.get(body.number);
   if(!c||!['working','waiting','assigned','enroute','arrived'].includes(c.status)||typeof body.reason!=='string'||!body.reason.trim())fail(409,'Укажите действующую заявку и причину');
   const from=c.status;
+  if(from==='working'&&(!user.supervisor||body.confirmed!==true))fail(403,'Начатую работу может снять только старший смены с подтверждением');
   if(from==='assigned'&&c.offers?.at(-1))Object.assign(c.offers.at(-1),{outcome:'returned',endedAt:Date.now()});
   delete c.replyBy;
   for(const [id,j] of jobs)if(j.number===c.number){jobs.delete(id);clearWorkEstimate(id,c.number)}
-  c.status='pending';delete c.vehicle;delete c.boarded;c.previousArrival=c.arrivedAt;delete c.arrivedAt;delete c.acceptedAt;
-  pending.set(c.number,c);log('reassignment',user.id,c,{from,reason:body.reason});processQueue();return send(c);
+  c.status='pending';delete c.vehicle;delete c.boarded;delete c.disembarked;c.firstArrivalAt??=c.arrivedAt;c.previousArrival=c.arrivedAt;delete c.arrivedAt;delete c.acceptedAt;
+  pending.set(c.number,c);log('reassignment',user.id,c,{from,reason:body.reason,confirmed:body.confirmed===true});processQueue();return send(c);
  }
  if(path==='/api/history'&&!post&&user.role==='dispatcher')return send([...history.values()].map(c=>({number:c.number,status:c.status,zone:c.zone,aog:c.aog})));
  if((path==='/api/action'||path==='/api/done')&&post&&user.role==='engineer'){
@@ -409,15 +474,16 @@ async function handle(req,res){
    if(['accept','reject'].includes(action)&&body.offerAt!==undefined&&body.offerAt!==call.assignedAt)fail(409,'Предложение изменилось. Обновите задание.');
    if(call.status==='assigned'&&now>=(call.replyBy??call.assignedAt+offerMs)){processQueue();fail(409,'Время ответа истекло')}
    if(action==='reject'&&call.status==='assigned'){
-    releaseOffer(call,user.id,'rejected',now);processQueue();return send({number:call.number,status:call.status});
+    releaseOffer(call,user.id,'rejected',now,receipt);processQueue();return send({number:call.number,status:call.status});
    }
    transition(call,action,now);
    if(action==='accept'&&call.offers?.at(-1)){
     Object.assign(call.offers.at(-1),{outcome:'accepted',endedAt:now});delete call.replyBy;
    }
    if(action==='done'||action==='wait'){jobs.delete(user.id);clearWorkEstimate(user.id,call.number)}
-   if(action==='accept'&&points.has(user.id))onPosition(user,points.get(user.id));
-   log('status',user.id,call,{action,status:call.status});processQueue();
+   log('status',user.id,call,{requestId:receipt,action,status:call.status});
+
+   processQueue();
    return send(call);
  }
  if(path==='/api/calls' && user.role==='dispatcher'){
@@ -428,17 +494,19 @@ async function handle(req,res){
    if(!zones.some(z=>z.properties.id===zone)||!aircraft.includes(type)||(!custom&&!Object.hasOwn(defects,defect))||!Object.hasOwn(priorities,priority))fail(400,'Проверьте параметры вызова');
    const tail=body.tail??'';
    const remark=body.remarkId&&remarks.get(body.remarkId);
-   if(body.remarkId&&(!remark||remark.call))fail(409,'Замечание уже обработано или не найдено');
+   if(body.remarkId&&(!remark||remark.call||(remark.requiresReview&&!remark.reviewedAt)))fail(409,'Замечание уже обработано или не найдено');
    if(body.scheduled&&!Number.isFinite(Date.parse(body.scheduled)))fail(400,'Проверьте время прибытия ВС');
    if(typeof tail!=='string'||tail.length>24)fail(400,'Проверьте номер борта');
    if(custom){defect=Object.keys(defects).find(k=>defects[k][0]===custom&&defects[k][1]==='ATA '+body.ata)||'CUSTOM-'+randomBytes(6).toString('hex');defects[defect]=[custom,'ATA '+body.ata]}
-   const call={number:nextCall++,createdAt:Date.now(),status:'pending',zone,aircraft:type,defect,priority,tail:tail.trim()};
+   const call={number:nextCall++,createdAt:Date.now(),status:'pending',manualFirst:body.manualFirst===true,zone,aircraft:type,defect,priority,tail:tail.trim()};
    history.set(call.number,call);
    if(remark){call.remarkId=remark.id;remark.call=call.number}
    if(body.scheduled){call.scheduled=body.scheduled;db.record('aircraft-schedule',user.id,call,{tail,scheduled:call.scheduled})}
    call.ata=Number(defects[defect][1].split(' ')[1]);call.kit=!!body.kit;
    call.description=defects[defect].join(' · ');call.source=['Экипаж','Сотрудник','MCC/ЦПУ'].includes(body.source)?body.source:'Экипаж';
-   if(remark)call.source='Сотрудник';
+   if(remark)call.source=remark.source||'Сотрудник';
+   if(!remark?.reviewedAt)log('mcc-reviewed',user.id,call,{remarkId:remark?.id,source:call.source,note:remark?.note||call.description,mode:'Приём и обработка при регистрации'});
+   if(remark){call.remarkNote=remark.note;call.reviewer=remark.reviewer||user.id}
    call.melHistory=call.tail?[...history.values()].filter(old=>old.number!==call.number&&old.tail===call.tail&&old.mel).map(old=>({number:old.number,mel:old.mel,until:old.until})):[];
    pending.set(call.number,call);log('registered',user.id,call,{...call});processQueue();return send(call);
  }
@@ -448,14 +516,14 @@ async function handle(req,res){
  res.setHeader('Content-Type',file[1]+'; charset=utf-8');
  res.end(readFileSync(new URL(file[0],import.meta.url)));
 }
-const handler=(req,res)=>handle(req,res).catch(e=>{res.statusCode=e.status||500;if(req.url?.split('?')[0]==='/api/v1/track'&&[400,413,415].includes(res.statusCode))db.record('input-rejected','Источник',null,{status:res.statusCode,reason:e.message});res.setHeader('Content-Type','application/json');res.end(JSON.stringify({error:e.status?e.message:'Ошибка сервера'}));});
+const handler=(req,res)=>handle(req,res).catch(e=>{res.statusCode=e.status||500;if(req.url?.split('?')[0]==='/api/v1/track'&&[400,413,415].includes(res.statusCode))db.record('track-error','Источник',null,{status:res.statusCode,reason:e.message});res.setHeader('Content-Type','application/json');res.end(JSON.stringify({error:e.status?e.message:'Ошибка сервера'}));});
 const server=tls?https.createServer({key:readFileSync(process.env.TLS_KEY),cert:readFileSync(process.env.TLS_CERT)},handler):http.createServer(handler);
 server.on('error',error=>{
   console.error(error.code==='EADDRINUSE'?'Адрес уже занят. Если сайт уже открыт, используйте коды работающей смены.':error.message);
   process.exitCode=1;
 });
 server.listen(port,host,()=>{
-  setInterval(processQueue,1000).unref();
+  setInterval(()=>{processQueue();for(const [id,c] of jobs)if(!c.arrivedAt)activeView(id)},1000).unref();
   if(!process.env.RENDER)for(const [code,account] of accounts)console.log(account.id+' — '+code);
   console.log('Перрон-15 · '+(tls?'https':'http')+'://'+host+':'+server.address().port);
 });

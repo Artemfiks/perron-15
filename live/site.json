@@ -1,5 +1,17 @@
 {
   "name": "Полигон ВДНХ",
-  "blockedObjects": [0, 2],
-  "stores": [4, 5]
+  "blockedObjects": [
+    0,
+    2
+  ],
+  "stores": [
+    4,
+    5
+  ],
+  "imageryBounds": {
+    "west": 37.608,
+    "south": 55.821,
+    "east": 37.649,
+    "north": 55.845
+  }
 }

@@ -36,13 +36,13 @@ export function network(roads,mode='walk',closed=[],barriers=[]) {
       adj[a].push([b,cost]);adj[b].push([a,cost]);edges.push([a,b,len,cost]);
     }
   }
-  function snap(p){
+  function snap(p,maxGap=50){
     let best;
     for(const [a,b,len,cost] of edges){
       const u=nodes[a],v=nodes[b],dx=v[0]-u[0],dy=v[1]-u[1];
       const t=Math.max(0,Math.min(1,((p[0]-u[0])*dx+(p[1]-u[1])*dy)/(len*len)));
       const q=[u[0]+t*dx,u[1]+t*dy], gap=distance(p,q);
-      if(gap<=50&&(!best || gap<best.gap)&&!blocked(p,q))best={a,b,len,cost,t,q,gap};
+      if(gap<=maxGap&&(!best || gap<best.gap)&&!blocked(p,q))best={a,b,len,cost,t,q,gap};
     }
     return best;
   }
@@ -68,6 +68,8 @@ export function network(roads,mode='walk',closed=[],barriers=[]) {
   }
   route.segments=edges.map(([a,b])=>[nodes[a],nodes[b]]);
   route.canJoin=p=>!!snap(p);
+  route.dropoff=p=>snap(p,Infinity)?.q;
+  route.clearConnector=(a,b)=>distance(a,b)<=50&&!blocked(a,b);
   return route;
 }
 export function center(feature){

@@ -27,21 +27,29 @@ export function planner(roads,zones,objects,agents,points,jobs){
   if(!fresh(p)||!target)return null;
   const start=xy([p.lon,p.lat]);
   const variants=[];
+  const drop=drive.dropoff(target);
+  const finish=drop&&(walk.clearConnector(drop,target)?
+   {path:[drop,target],meters:Math.hypot(drop[0]-target[0],drop[1]-target[1]),minutes:Math.hypot(drop[0]-target[0],drop[1]-target[1])/(5000/60)}:walk(drop,target));
   const kits=c.kit&&!c.kitCollected?stores.map(s=>[s]):[[]];
   for(const via of kits){
    const direct=join(start,via,target,walk);
-   if(direct)variants.push({...direct,mode:'Пешком',minutes:direct.minutes+via.length*.5,store:via[0]});
+   if(direct&&(!c.boarded||c.disembarked))variants.push({...direct,mode:'Пешком',minutes:direct.minutes+via.length*.5,store:via[0]});
    for(const a of agents.filter(a=>a.kind==='vehicle')){
-    if(a.id===reservedVehicle)continue;
+    if(c.disembarked||a.id===reservedVehicle)continue;
     if(jobs.get(id)===c&&c.vehicle!==a.id)continue;
-    const vp=points.get(a.id);if(!fresh(vp)||[...jobs].some(([owner,j])=>owner!==id&&j.vehicle===a.id))continue;
-    const car=xy([vp.lon,vp.lat]), approach=walk(start,car), leg=join(car,via,target,drive);
+    const vp=points.get(a.id);if((!c.boarded&&!fresh(vp))||[...jobs].some(([owner,j])=>owner!==id&&j.vehicle===a.id))continue;
+    if(!finish)continue;
+    const car=c.boarded?start:xy([vp.lon,vp.lat]),approach=c.boarded?{path:[start],meters:0,minutes:0}:walk(start,car),leg=join(car,via,drop,drive);
     if(!approach||!leg)continue;
-    variants.push({mode:a.id,vehicle:a.id,store:via[0],minutes:approach.minutes+leg.minutes+(c.boarded?10:20)/60+via.length*.5,
-       meters:approach.meters+leg.meters,path:[...approach.path,...leg.path.slice(1)]});
+    variants.push({mode:a.id,vehicle:a.id,store:via[0],pickup:car,dropoff:drop,minutes:approach.minutes+leg.minutes+finish.minutes+(c.boarded?10:20)/60+via.length*.5,
+       meters:approach.meters+leg.meters+finish.meters,path:[...approach.path,...leg.path.slice(1),...finish.path.slice(1)]});
    }
   }
-  return variants.sort((a,b)=>a.minutes-b.minutes)[0]||null;
+  variants.sort((a,b)=>a.minutes-b.minutes);
+  const best=variants[0];
+  if(!best)return null;
+  best.alternatives=Object.values(Object.fromEntries([...variants].reverse().map(v=>[v.mode,{mode:v.mode,minutes:v.minutes,meters:v.meters}])));
+  return best;
  }
  function unavailable(id,c){
   const p=points.get(id),{target}=destination(c);

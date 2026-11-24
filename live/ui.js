@@ -1,3 +1,4 @@
+import {createOutbox} from './outbox.js';
 import {rosterEditor} from './roster.js';
 import {forbiddenObjects,positionStatus} from './access.mjs';
 import {network,xy,setOrigin,center} from './route.js';
@@ -10,19 +11,37 @@ const notice=msg=>{el('notice').textContent=msg;};
 async function api(name,data){
  const res=await fetch('/api/'+name,data===undefined?{cache:'no-store'}:{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
  const result=await res.json();
- if(!res.ok){if(res.status===401 && account)location.reload();throw Error(result.error);}
+ if(!res.ok){if(res.status===401 && account)location.reload();throw Object.assign(Error(result.error),{status:res.status});}
  return result;
 }
+let outbox,voice=false,spoken='';
+function speak(message){
+ if(!voice||!message||spoken===message)return;
+ spoken=message;const line=new SpeechSynthesisUtterance(message);line.lang='ru-RU';speechSynthesis.cancel();speechSynthesis.speak(line);
+}
+el('voice').onclick=()=>{
+ if(!('speechSynthesis' in window)){notice('Браузер не поддерживает озвучивание');return}
+ voice=!voice;spoken='';el('voice').textContent=voice?'Выключить голосовые подсказки':'Включить голосовые подсказки';
+ if(voice)speak(el('guidance').textContent||'Голосовые подсказки включены');else speechSynthesis.cancel();
+};
 const roster=rosterEditor(api,()=>refresh(),aircraft,defects);
 async function load(user){
  account=user;
- for(const [id,show] of [['entry',!user],['engineer',user?.role==='engineer'],['dispatch',user?.role==='dispatcher'],['logout',!!user]])el(id).hidden=!show;
+ for(const [id,show] of [['entry',!user],['mcc',user?.role==='mcc'],['engineer',user?.role==='engineer'],['dispatch',user?.role==='dispatcher'],['logout',!!user]])el(id).hidden=!show;
  if(!user)return;
- el('identity').textContent=user.id;
+ el('identity').textContent=user.supervisor?'Старший смены · диспетчер':user.id;
+ if(user.role==='mcc'){await refresh();timer=setInterval(refresh,3000);return}
+ if(user.role==='engineer'){
+  outbox=createOutbox(user,api,msg=>{el('sync').textContent=msg});
+  window.addEventListener('online',()=>outbox.flush().then(()=>refresh()));
+ }
+ if(user.supervisor)for(const [role,title] of [['mcc','Выдать код сотруднику MCC'],['dispatcher','Выдать код диспетчеру']])control(title,async()=>{
+  const result=await api('staff-code',{role});prompt('Вход через «Диспетчер» · '+result.id,result.code)
+ });
  {
    const layers=await Promise.all(['roads','service_zones','objects','airport_boundaries'].map(async n=>(await fetch('/data/'+n)).json()));
    geo={roads:layers[0],zones:layers[1].features,objects:layers[2].features,bounds:layers[3].features};
-   const site=await (await fetch('/site.json')).json();geo.barriers=forbiddenObjects(geo.objects,site.blockedObjects);
+   const site=await (await fetch('/site.json')).json();imageryBounds=site.imageryBounds||boundsOf(geo.bounds);geo.barriers=forbiddenObjects(geo.objects,site.blockedObjects);
    setOrigin(layers[3]);document.querySelector('.maphead span').textContent=geo.zones.length+' зон';document.querySelector('.maphead h2').textContent=site.name;
    if(user.role==='engineer')el('engineer').append(document.querySelector('.mapbox'));
    for(const model of aircraft)el('aircraft').add(new Option(model,model));
@@ -72,7 +91,11 @@ function updateRoads(closed){
 let lastMap;
 // The service returns a north-up geographic raster. Its aspect ratio in degrees
 // matches the requested bounding box, so the service does not expand either axis.
-const imageryBounds={west:37.608,south:55.821,east:37.649,north:55.845};
+let imageryBounds;
+function boundsOf(features){
+ const pts=features.flatMap(f=>f.geometry.coordinates.flat(2)),xs=pts.map(p=>p[0]),ys=pts.map(p=>p[1]);
+ return {west:Math.min(...xs),east:Math.max(...xs),south:Math.min(...ys),north:Math.max(...ys)};
+}
 const imagery=el('satellite-image');
 let layer='plan',imageState='idle',imageError='';
 try{if(localStorage.getItem('perron-map-layer')==='satellite')layer='satellite'}catch{}
@@ -110,16 +133,18 @@ function drawBackground([x,y,width,height]){
  el('imagery-credit').hidden=!visible;
  el('layer-plan').setAttribute('aria-pressed',String(!requested));
  el('layer-satellite').setAttribute('aria-pressed',String(requested));
- el('imagery-status').textContent=requested&&!intersects?'За пределами спутникового снимка ВДНХ.':requested&&!visible?'Загружаем снимок ВДНХ…':imageError;
+ el('imagery-status').textContent=requested&&!intersects?'За пределами спутникового снимка полигона.':requested&&!visible?'Загружаем снимок полигона…':imageError;
 }
 el('focus').onchange=()=>{if(lastMap)draw(...lastMap)};
 function draw(team,zone){
  lastMap=[team,zone];
  const map=el('map'),focus=el('focus'),engineers=team.filter(t=>t.kind==='engineer');
  const selected=focus.value;
- if([...focus.options].slice(1).map(o=>o.value).join('|')!==engineers.map(t=>t.obj).join('|')){
-  focus.replaceChildren(new Option('Весь полигон',''),...engineers.map(t=>new Option(t.id,t.obj)));
-  focus.value=engineers.some(t=>t.obj===selected)?selected:(account.role==='engineer'?account.obj:'');
+ const places=[...geo.objects.map(f=>({key:'object:'+f.properties.id,name:f.properties.name,xy:center(f)})),...geo.zones.map(f=>({key:'zone:'+f.properties.id,name:'Зона '+f.properties.id,xy:center(f)}))];
+ const options=[...engineers.map(t=>({key:t.obj,name:t.id})),...places];
+ if([...focus.options].slice(1).map(o=>o.value).join('|')!==options.map(t=>t.key).join('|')){
+  focus.replaceChildren(new Option('Весь полигон',''),...options.map(t=>new Option(t.name,t.key)));
+  focus.value=options.some(t=>t.key===selected)?selected:(account.role==='engineer'?account.obj:'');
  }
  el('map-overlay').replaceChildren();
  const hatch=shape('pattern',{id:'restricted',patternUnits:'userSpaceOnUse',width:12,height:12});
@@ -140,10 +165,11 @@ function draw(team,zone){
  if(best)shape('polyline',{points:points(best.route.path),fill:'none',class:'chosen-route',stroke:'#176b87','stroke-width':7,'stroke-linejoin':'round'});
  for(const t of team)if(t.job?.route&&!t.job.arrivedAt)shape('polyline',{points:points(t.job.route.path),fill:'none',class:'chosen-route',stroke:'#176b87','stroke-width':7});
  const focused=engineers.find(t=>t.obj===focus.value)?.point;
- const zoom=focused&&Date.now()-focused.time<=60000;
+ const location=places.find(p=>p.key===focus.value)?.xy||(focused&&xy([focused.lon,focused.lat]));
+ const zoom=!!location;
  const all=geo.bounds.flatMap(f=>f.geometry.coordinates.flat(2).map(xy)),xs=all.map(p=>p[0]),ys=all.map(p=>p[1]);
  let box=[Math.min(...xs)-45,Math.min(...ys)-45,Math.max(...xs)-Math.min(...xs)+90,Math.max(...ys)-Math.min(...ys)+90];
- if(zoom){const [x,y]=xy([focused.lon,focused.lat]);box=[x-140,y-140,280,280]}
+ if(zoom){const [x,y]=location;box=[x-140,y-140,280,280]}
  map.setAttribute('viewBox',box.join(' '));
  drawBackground(box);
  function label(x,y,title,size,anchor='middle'){
@@ -166,17 +192,18 @@ function draw(team,zone){
    if(p){const stamp=document.createElement('small');stamp.textContent='GPS '+new Date(p.time).toLocaleTimeString('ru')+' · ±'+Math.round(p.accuracy)+' м';row.append(stamp)}
    el('positions').append(row);
   }
-  if(!p||Date.now()-p.time>60000)continue;
+  if(!p)continue;
+  const stale=Date.now()-p.time>60000;
   const [x,y]=xy([p.lon,p.lat]),r=zoom?3.5:10;
   if(isEngineer)shape('circle',{cx:x,cy:y,r:p.accuracy,fill:color,'fill-opacity':.12,stroke:color,'stroke-width':zoom?1:2,'stroke-dasharray':'3 3'});
-  shape('circle',{cx:x,cy:y,r,fill:color,stroke:'#fff','stroke-width':zoom?1:2});
-  label(x+r+2,y-r,t.id,zoom?7:17,'start');
+  shape('circle',{cx:x,cy:y,r,fill:stale?'#879297':color,stroke:'#fff','stroke-width':zoom?1:2});
+  label(x+r+2,y-r,t.id+(stale?' · последняя позиция':''),zoom?7:17,'start');
  }
 }
 const timeRu=ms=>new Date(ms).toLocaleTimeString('ru');
 const offerLabels={offered:'Отправлено',accepted:'Принято',rejected:'Отклонено',timeout:'Нет ответа',busy:'Указал занятость',returned:'Возвращено в очередь'};
 async function setAvailability(minutes){
- try{await api('availability',{minutes});await refresh()}catch(e){notice(e.message)}
+ try{await outbox.submit('availability',{minutes,statedAt:Date.now()});await refresh()}catch(e){notice(e.message)}
 }
 el('availability-form').onsubmit=e=>{e.preventDefault();setAvailability(el('busy-minutes').valueAsNumber)};
 el('available-now').onclick=()=>setAvailability(0);
@@ -187,7 +214,12 @@ function timing(f){
 async function refresh(prefer){
  const seq=++revision;
  try{
+  if(account.role==='mcc'){
+   const rows=await api('mcc');if(seq!==revision)return;
+   el('mcc-list').replaceChildren(...rows.map(r=>{const b=document.createElement('button');b.textContent=r.note+' · Проверить и передать';b.onclick=async()=>{try{await api('mcc',{id:r.id});await refresh()}catch(e){notice(e.message)}};return b}));return;
+  }
   if(account.role==='engineer'){
+   await outbox.flush();
    const [job,visible,closed]=await Promise.all([api('job'),api('agents'),api('roads')]);if(seq!==revision)return;updateRoads(closed);
    activeJob=job;
    el('busy-label').textContent=job?.status==='working'?'До завершения текущей работы, минут':'Занят другим бортом ещё, минут';
@@ -196,21 +228,30 @@ async function refresh(prefer){
 
    el('myjob').textContent=job?[describe(job),labels[job.status],job.arrivedAt?'Прибытие '+new Date(job.arrivedAt).toLocaleTimeString()+' · '+(job.inLimit?'в нормативе':'с опозданием'):job.route?'До зоны '+job.route.minutes.toFixed(1)+' мин':'Ожидание GPS'].join(' · '):'Ожидание назначения';
    if(job){el('myjob').textContent+=(job.kit?' · Комплект '+(job.kitCollected?'получен':'получить на складе'):'')+(job.route?' · '+job.route.mode:'')+(job.aircraftNear?' · Рядом ВС '+job.aircraftNear:'');}
+   if(job?.remarkNote)el('myjob').textContent+=' · Замечание: '+job.remarkNote;
    if(job)el('myjob').textContent+=' · '+job.targetSource+(job.arrivalZone===null?' · борт вне зоны обслуживания':'')+(job.status==='assigned'&&job.replyBy?' · Ответить до '+timeRu(job.replyBy):'');
+   const hint=job?.route&&!job.arrivedAt?
+    [job.aircraftNear?'Внимание, поблизости воздушное судно '+job.aircraftNear:'',
+     job.vehicle&&!job.boarded?'Пройдите к машине '+job.vehicle:job.kit&&!job.kitCollected?'Следуйте к складу за комплектом':'Следуйте по выделенному маршруту к борту',
+     'Зона '+(job.arrivalZone??job.zone)].filter(Boolean).join('. '):'';
+   el('guidance').textContent=hint+(hint&&job.eta?' · ETA '+timeRu(job.eta):'');speak(hint);
    best=job?.route?{route:job.route}:null;
    draw(visible,geo.zones.find(z=>z.properties.id===job?.arrivalZone));
    const buttons=el('actions');buttons.replaceChildren();
-   if(job?.kit){const tool=document.createElement('button');tool.textContent=job.kitCollected?'Отметить отсутствие комплекта':'Подтвердить наличие комплекта';tool.onclick=async()=>{try{await api('tool',{number:job.number,collected:!job.kitCollected});await refresh()}catch(e){notice(e.message)}};buttons.append(tool)}
+   if(job?.kit){const tool=document.createElement('button');tool.textContent=job.kitCollected?'Отметить отсутствие комплекта':'Подтвердить наличие комплекта';tool.onclick=async()=>{try{await outbox.submit('tool',{number:job.number,collected:!job.kitCollected});await refresh()}catch(e){notice(e.message)}};buttons.append(tool)}
+   if(job&&job.atlbHistory?.length){
+    const records=document.createElement('div');records.textContent='ATLB · '+job.atlbHistory.map(r=>r.ref+' · '+r.description+' · MEL '+r.mel+' до '+r.until).join(' / ');buttons.append(records)
+   }
    if(job?.status==='working'){
     const decision=document.createElement('button');decision.textContent='AOG / отложить по MEL';decision.onclick=async()=>{
      const value=prompt('AOG или категория MEL A/B/C/D');if(!value)return;
      const until=value==='AOG'?null:prompt('Срок отложения в формате ГГГГ-ММ-ДДTчч:мм');
-     try{await api('decision',{number:job.number,decision:value.toUpperCase(),until:until?new Date(until).toISOString():null});await refresh()}catch(e){notice(e.message)}
+     try{await outbox.submit('decision',{number:job.number,decision:value.toUpperCase(),until:until?new Date(until).toISOString():null});await refresh()}catch(e){notice(e.message)}
     };buttons.append(decision);
     if(job.melHistory?.length)buttons.append(document.createTextNode('Предыдущие MEL: '+job.melHistory.map(h=>h.mel+' до '+h.until).join(', ')));
    }
    const actions={assigned:[['accept','Принять'],['reject','Отклонить']],arrived:[['start','Начать работы']],working:[['done','Завершить работы'],['wait','Ожидать запчасть']]};
-   for(const [action,title] of actions[job?.status]||[]){const btn=document.createElement('button');btn.textContent=title;btn.onclick=async()=>{btn.disabled=true;try{await api('action',{action,number:job.number,offerAt:job.assignedAt});await refresh()}catch(e){notice(e.message)}};buttons.append(btn)}
+   for(const [action,title] of actions[job?.status]||[]){const btn=document.createElement('button');btn.textContent=title;btn.onclick=async()=>{btn.disabled=true;try{await outbox.submit('action',{action,number:job.number,offerAt:job.assignedAt});await refresh()}catch(e){notice(e.message)}};buttons.append(btn)}
    return;
   }
   const [team,calls,agents,remarks,closed]=await Promise.all([api('team'),api('dispatch'),api('agents'),api('remarks'),api('roads')]);if(seq!==revision)return;updateRoads(closed);
@@ -224,9 +265,16 @@ async function refresh(prefer){
   if(current)picker.value=String(current.number);
   else picker.add(new Option('Заявок пока нет',''));
   picker.disabled=!current;
-  el('call-detail').textContent=current?[describe(current),labels[current.status],current.targetSource,current.arrivalZone===null?'Борт вне зоны обслуживания':'',current.status==='pending'?'Автоподбор ожидает подходящего инженера':'',current.arrivedAt?'Прибытие '+timeRu(current.arrivedAt)+' · '+(current.inLimit?'в нормативе':'опоздание'):current.breachAt?'Срок прибытия истёк':''].filter(Boolean).join(' · '):'Зарегистрируйте вызов для автоматической отправки.';
+  el('call-detail').textContent=current?[describe(current),labels[current.status],current.targetSource,current.arrivalZone===null?'Борт вне зоны обслуживания':'',current.status==='pending'?(current.manualFirst&&!current.offers?.length?'Ожидает выбора диспетчера':'Автоподбор ожидает подходящего инженера'):'',current.arrivedAt?'Прибытие '+timeRu(current.arrivedAt)+' · '+(current.inLimit?'в нормативе':'опоздание'):current.breachAt?'Срок прибытия истёк':''].filter(Boolean).join(' · '):'Зарегистрируйте вызов для автоматической отправки.';
+  if(current?.status==='pending'&&current.queueRisk)el('call-detail').textContent+=' · Риск срыва: на текущих данных никто не успевает к сроку.';
   el('offer-history').replaceChildren(...(current?.offers||[]).map(offer=>{
    const item=document.createElement('li');item.textContent=offer.engineer+' · отправлено '+timeRu(offer.at)+' · '+offerLabels[offer.outcome]+(offer.endedAt?' '+timeRu(offer.endedAt):offer.outcome==='offered'?' · ответ до '+timeRu(offer.replyBy):'');return item;
+  }));
+  const offer=current?.offers?.at(-1);
+  el('comparison').replaceChildren(...(offer?.comparison||[]).map(c=>{
+   const item=document.createElement('li');
+   const why=c.reason||['Допуск ATA '+c.ata,c.mode,Math.round(c.meters)+' м',c.waitMinutes>0?'занят ещё '+Math.ceil(c.waitMinutes)+' мин':'свободен',timing(c.forecast)].join(' · ');
+   item.textContent=c.id+' · '+(c.id===offer.engineer?'Выбран · ':'')+why+(c.alternatives?.length>1?' · варианты: '+c.alternatives.map(v=>v.mode+' '+v.minutes.toFixed(1)+' мин').join(', '):'')+(c.impact?' · по срочной № '+c.impact.number+' останется '+(c.impact.engineer||'никого'):'');return item
   }));
   const zone=geo.zones.find(z=>z.properties.id===(current?current.arrivalZone:Number(el('zone').value)));
   best=null;el('team').replaceChildren();
@@ -266,7 +314,12 @@ async function refresh(prefer){
    if(t.job&&!t.job.arrivedAt)status+=' · До норматива '+Math.max(0,Math.ceil((t.job.createdAt+900000-Date.now())/1000))+' с';
    if(t.job?.aircraftNear)status+=' · Рядом ВС '+t.job.aircraftNear;
    const row=document.createElement('div'),detail=document.createElement('span');row.className='row';row.textContent=t.id;
-   detail.textContent=status+(p?' · '+new Date(p.time).toLocaleTimeString('ru'):'');row.append(detail);el('team').append(row);
+   detail.textContent=status+(p?' · '+new Date(p.time).toLocaleTimeString('ru'):'');row.append(detail);
+   const choice=ranking.find(r=>r.id===t.id);
+   if(current?.manualFirst&&!current.offers?.length&&choice?.route&&!t.job&&!(choice.busyUntil>Date.now())){
+    const button=document.createElement('button');button.textContent='Назначить · '+t.id;button.onclick=async()=>{try{await api('assign',{number:current.number,engineer:t.id});await refresh(current.number)}catch(e){notice(e.message)}};row.append(button);
+   }
+   el('team').append(row);
   }
   if(best)best.number=current.number;
   draw(agents.map(a=>({...a,job:team.find(t=>t.id===a.id)?.job})),zone);
@@ -279,7 +332,7 @@ el('call-form').onsubmit=async event=>{
  const button=event.currentTarget.querySelector('button');
  button.disabled=true;
  try{
-  const call=await api('calls',{zone:Number(el('zone').value),aircraft:el('aircraft').value,tail:el('tail').value,defect:el('defect').value,priority:el('priority').value,text:el('custom').value,ata:Number(el('ata').value),kit:el('kit').checked,source:el('source').value,remarkId:el('remark').value,scheduled:el('scheduled').value?new Date(el('scheduled').value).toISOString():null});
+  const call=await api('calls',{manualFirst:el('manual-first').checked,zone:Number(el('zone').value),aircraft:el('aircraft').value,tail:el('tail').value,defect:el('defect').value,priority:el('priority').value,text:el('custom').value,ata:Number(el('ata').value),kit:el('kit').checked,source:el('source').value,remarkId:el('remark').value,scheduled:el('scheduled').value?new Date(el('scheduled').value).toISOString():null});
   if(el('custom').value.trim())defects[call.defect]=[el('custom').value.trim(),'ATA '+call.ata];
   if(el('custom').value.trim()){if(!Array.from(el('defect').options).some(o=>o.value===call.defect))el('defect').add(new Option(call.description,call.defect));el('defect').value=call.defect;el('custom').value='';}
   notice('Вызов № '+call.number+' зарегистрирован.');await refresh(call.number);
@@ -292,11 +345,12 @@ el('dispatch').append(controls);
 function control(title,fn){const b=document.createElement('button');b.textContent=title;b.onclick=()=>fn().catch(e=>notice(e.message));controls.append(b)}
 function filterDefects(){const q=el('lookup').value.trim().toLowerCase();el('defect').replaceChildren(...Object.entries(defects).filter(([k,v])=>(k+' '+v.join(' ')).toLowerCase().includes(q)).map(([k,v])=>new Option(v.join(' · '),k)))}
 el('lookup').oninput=filterDefects;
-const report=document.createElement('button');report.textContent='Передать замечание в MCC/ЦПУ';report.onclick=async()=>{const note=prompt('Опишите обнаруженную проблему');if(note)try{await api('remarks',{note});notice('Замечание поступило диспетчеру')}catch(e){notice(e.message)}};el('engineer').append(report);
+const report=document.createElement('button');report.textContent='Передать замечание в MCC/ЦПУ';report.onclick=async()=>{const note=prompt('Опишите обнаруженную проблему');if(note)try{await outbox.submit('remarks',{note})}catch(e){notice(e.message)}};el('engineer').append(report);
 control('Показатели смены',async()=>{const m=await api('metrics'),v=n=>n===null?'—':n.toFixed(1);notice('Всего '+m.registered+' · без прибытия '+m.withoutArrival+' · в нормативе '+m.onTime+' из '+m.arrived+' ('+v(m.arrived?100*m.onTime/m.arrived:null)+'%) · среднее прибытие '+v(m.meanSeconds)+' с · средняя ошибка первого ETA '+v(m.meanEtaErrorSeconds)+' с · подбор '+v(m.meanSelectionMs)+' мс')});
 control('Ввести стартовые точки',async()=>{const src=prompt('Вставьте JSON точки или пакета организаторов');if(src){const rows=[].concat(await api('v1/track',JSON.parse(src)));notice('Применено '+rows.filter(r=>r.applied).length+' из '+rows.length);await refresh()}});
 control('Приём имитатора без ключа',async()=>{const enable=confirm('Открыть приём GPS без ключа на один час? Отмена закрывает приём.');await api('competition-feed',{enable});notice(enable?'Вход для имитатора открыт на один час':'Вход без ключа закрыт')});
-control('Вернуть заявку в очередь',async()=>{const list=(await api('history')).filter(c=>!['pending','done'].includes(c.status));if(!list.length)return notice('Нет заявок для переназначения');const number=Number(prompt(list.map(c=>'№ '+c.number+' · '+labels[c.status]).join('\n')+'\nВведите номер'));if(!number)return;const reason=prompt('Причина решения старшего смены');if(reason){await api('control',{number,reason});await refresh(number)}});
+control('Вернуть заявку в очередь',async()=>{const list=(await api('history')).filter(c=>!['pending','done'].includes(c.status));if(!list.length)return notice('Нет заявок для переназначения');const number=Number(prompt(list.map(c=>'№ '+c.number+' · '+labels[c.status]).join('\n')+'\nВведите номер'));if(!number)return;const reason=prompt('Причина решения старшего смены');if(reason){const started=list.find(c=>c.number===number)?.status==='working';if(started&&!confirm('Подтвердить снятие исполнителя с начатой работы?'))return;await api('control',{number,reason,confirmed:started});await refresh(number)}});
+control('Загрузить выписку ATLB',async()=>{const src=prompt('Вставьте JSON-массив записей с полями ref, tail, ata, description, mel и until. Образец приведён в инструкции запуска.');if(src){const r=await api('atlb',{records:JSON.parse(src)});notice('Загружено записей ATLB: '+r.imported)}});
 control('Ключ имитатора',async()=>{prompt('Authorization: Bearer <ключ>. POST /api/v1/track',(await api('track-key')).key)});
 control('GPS телефона в машине',async()=>{const obj=prompt('ID спецтранспорта','v-01');if(!obj)return;const b=await api('beacon',{obj});prompt('Откройте ссылку на телефоне в машине. Действует 12 часов.',location.origin+'/beacon#'+new URLSearchParams(b))});
 control('Закрытые дороги',async()=>{const ids=prompt('ID закрытых участков через запятую. Пустое поле открывает дороги',(await api('roads')).join(','));if(ids!==null){await api('roads',{ids:ids.split(',').map(v=>v.trim()).filter(Boolean).map(Number)});await refresh()}});
@@ -327,3 +381,5 @@ el('pair').onclick=async()=>{
 el('unpair').onclick=async()=>{
  try{await api('background-key',{revoke:true});clearPair();el('native-status').textContent='Фоновый доступ телефона отключён.'}catch(e){notice(e.message)}
 };
+
+el('mcc-intake').onsubmit=async ev=>{ev.preventDefault();try{await api('remarks',Object.fromEntries(new FormData(ev.target)));ev.target.reset();await refresh()}catch(e){notice(e.message)}};

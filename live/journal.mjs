@@ -5,6 +5,8 @@ export function journal(file){
  CREATE TRIGGER IF NOT EXISTS immutable_update BEFORE UPDATE ON events BEGIN SELECT RAISE(ABORT,'append only'); END;
  CREATE TRIGGER IF NOT EXISTS immutable_delete BEFORE DELETE ON events BEGIN SELECT RAISE(ABORT,'append only'); END;
  CREATE TABLE IF NOT EXISTS state(id INTEGER PRIMARY KEY, json TEXT NOT NULL);`);
+ db.exec("CREATE TABLE IF NOT EXISTS metadata(k TEXT PRIMARY KEY,v TEXT); INSERT OR IGNORE INTO metadata VALUES('shift',hex(randomblob(16)))");
+ const shiftId=db.prepare("SELECT v FROM metadata WHERE k='shift'").get().v;
  const ins=db.prepare('INSERT INTO events(t,kind,actor,ticket,detail) VALUES(?,?,?,?,?)');
  const save=db.prepare('INSERT OR REPLACE INTO state VALUES(1,?)');
  function record(kind,actor,c,detail={},snapshot){
@@ -13,6 +15,9 @@ export function journal(file){
    if(snapshot)save.run(JSON.stringify(snapshot));db.exec('COMMIT');
   }catch(e){db.exec('ROLLBACK');throw e}
  }
+ const receipts=db.prepare("SELECT 1 FROM events WHERE actor=? AND json_extract(detail,'$.requestId')=? LIMIT 1");
+ db.exec("CREATE INDEX IF NOT EXISTS event_receipt ON events(actor,json_extract(detail,'$.requestId'))");
+ const received=(actor,id)=>!!receipts.get(actor,id);
  const quote=v=>{let s=String(v??'');if(/^[=+@\-\t\r]/.test(s))s="'"+s;return '"'+s.replaceAll('"','""')+'"'};
  function csv(){const all=db.prepare('SELECT * FROM events ORDER BY seq').all();return '\uFEFF'+'seq,time_utc,event,actor,call,parameters\r\n'+all.map(r=>Object.values(r).map(quote).join(',')).join('\r\n')}
  function metrics(){
@@ -30,5 +35,5 @@ export function journal(file){
    meanEtaErrorSeconds:mean(rows.filter(r=>Number.isFinite(r.forecast)).map(r=>Math.abs(r.arrivedAt-r.forecast)/1000)),
    meanSelectionMs:mean(selection)};
  }
- return {record,csv,metrics,restore:()=>JSON.parse(db.prepare('SELECT json FROM state WHERE id=1').get()?.json||'null'),close:()=>db.close()};
+ return {shiftId,record,received,csv,metrics,restore:()=>JSON.parse(db.prepare('SELECT json FROM state WHERE id=1').get()?.json||'null'),close:()=>db.close()};
 }

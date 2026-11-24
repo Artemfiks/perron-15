@@ -12,7 +12,7 @@ export function track(body, agents, points, onApply=()=>{}, now=Date.now()){
  });
  const result=rows.map(p=>{
   const a=agents.find(x=>x.obj===p.obj);
-  const applied=!!a&&p.time<=now+5000&&p.time>(points.get(a.id)?.time??0);
+  const applied=!!a&&p.accuracy<=100&&p.time<=now+5000&&p.time>(points.get(a.id)?.time??0);
   if(applied){points.set(a.id,p);onApply(a,p)}
   return {accepted:true,applied,obj:p.obj,t:new Date(p.time).toISOString()};
  });

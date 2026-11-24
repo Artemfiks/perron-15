@@ -18,7 +18,7 @@ function edgeDistance(point,feature){
 
 export function positionStatus(point,barriers,bounds,walk,now=Date.now()){
  if(!point)return {level:'unknown',text:'Ожидаем первую GPS-точку'};
- if(now-point.time>60000)return {level:'unknown',text:'GPS устарел · текущее положение неизвестно'};
+ if(now-point.time>60000)return {level:'unknown',text:'Последняя известная позиция · GPS устарел'};
  if(point.accuracy>50)return {level:'uncertain',text:'Низкая точность GPS · положение относительно контура неизвестно'};
  const coords=[point.lon,point.lat],p=xy(coords);
  for(const f of barriers){
@@ -27,7 +27,7 @@ export function positionStatus(point,barriers,bounds,walk,now=Date.now()){
   if(insideZone(coords,f))return {level:'blocked',text:'Проход запрещён · GPS внутри контура '+name};
  }
  if(bounds.some(f=>edgeDistance(p,f)<=point.accuracy))return {level:'uncertain',text:'У границы полигона · положение неоднозначно'};
- if(!bounds.some(f=>insideZone(coords,f)))return {level:'outside',text:'За пределами полигона ВДНХ'};
+ if(!bounds.some(f=>insideZone(coords,f)))return {level:'outside',text:'За пределами полигона'};
  if(walk.canJoin(p))return {level:'open',text:'Вне запретных контуров · есть подход к открытой дорожке'};
  return {level:'outside',text:'Вне запретных контуров · открытая дорожка недоступна в пределах 50 м'};
 }
