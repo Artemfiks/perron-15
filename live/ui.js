@@ -60,7 +60,7 @@ el('track').onclick=async()=>{
 function shape(tag,attrs,label){
  const n=document.createElementNS('http://www.w3.org/2000/svg',tag);
  for(const [k,v] of Object.entries(attrs))n.setAttribute(k,v);
- if(label)n.textContent=label;el('map').append(n);return n;
+ if(label)n.textContent=label;el('map-overlay').append(n);return n;
 }
 const points=coords=>coords.map(p=>p.join(',')).join(' ');
 function updateRoads(closed){
@@ -70,6 +70,48 @@ function updateRoads(closed){
  geo.walk=network(geo.roads,'walk',closed,geo.barriers);
 }
 let lastMap;
+// The service returns a north-up geographic raster. Its aspect ratio in degrees
+// matches the requested bounding box, so the service does not expand either axis.
+const imageryBounds={west:37.608,south:55.821,east:37.649,north:55.845};
+const imagery=el('satellite-image');
+let layer='plan',imageState='idle',imageError='';
+try{if(localStorage.getItem('perron-map-layer')==='satellite')layer='satellite'}catch{}
+function selectLayer(next){
+ layer=next;imageError='';
+ try{localStorage.setItem('perron-map-layer',next)}catch{}
+ if(lastMap)draw(...lastMap);
+}
+el('layer-plan').onclick=()=>selectLayer('plan');
+el('layer-satellite').onclick=()=>selectLayer('satellite');
+imagery.addEventListener('load',()=>{
+ imageState='ready';
+ if(lastMap&&layer==='satellite')draw(...lastMap);
+});
+imagery.addEventListener('error',()=>{
+ imageState='idle';imagery.removeAttribute('href');
+ if(layer!=='satellite')return;
+ selectLayer('plan');imageError='Снимок не загрузился. Можно повторить кнопкой «Спутник».';
+ el('imagery-status').textContent=imageError;
+});
+function drawBackground([x,y,width,height]){
+ const {west,south,east,north}=imageryBounds;
+ const [left,top]=xy([west,north]),[right,bottom]=xy([east,south]);
+ const intersects=x<right&&x+width>left&&y<bottom&&y+height>top;
+ const requested=layer==='satellite';
+ if(requested&&intersects&&imageState==='idle'){
+  imageState='loading';
+  for(const [key,value] of Object.entries({x:left,y:top,width:right-left,height:bottom-top}))imagery.setAttribute(key,value);
+  const params=new URLSearchParams({bbox:[west,south,east,north].join(','),bboxSR:'4326',imageSR:'4326',size:'2050,1200',format:'jpg',f:'image'});
+  imagery.setAttribute('href','https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/export?'+params);
+ }
+ const visible=requested&&intersects&&imageState==='ready';
+ imagery.setAttribute('visibility',visible?'visible':'hidden');
+ el('map').classList.toggle('satellite-map',visible);
+ el('imagery-credit').hidden=!visible;
+ el('layer-plan').setAttribute('aria-pressed',String(!requested));
+ el('layer-satellite').setAttribute('aria-pressed',String(requested));
+ el('imagery-status').textContent=requested&&!intersects?'За пределами спутникового снимка ВДНХ.':requested&&!visible?'Загружаем снимок ВДНХ…':imageError;
+}
 el('focus').onchange=()=>{if(lastMap)draw(...lastMap)};
 function draw(team,zone){
  lastMap=[team,zone];
@@ -79,30 +121,31 @@ function draw(team,zone){
   focus.replaceChildren(new Option('Весь полигон',''),...engineers.map(t=>new Option(t.id,t.obj)));
   focus.value=engineers.some(t=>t.obj===selected)?selected:(account.role==='engineer'?account.obj:'');
  }
- map.replaceChildren();
+ el('map-overlay').replaceChildren();
  const hatch=shape('pattern',{id:'restricted',patternUnits:'userSpaceOnUse',width:12,height:12});
- hatch.append(shape('rect',{width:12,height:12,fill:'#ffe1d8'}),shape('path',{d:'M-2 2L2 -2M0 12L12 0M10 14L14 10',stroke:'#c65b47','stroke-width':2}));
+ hatch.append(shape('rect',{width:12,height:12,fill:'#ffe1d8',class:'hatch-base'}),shape('path',{d:'M-2 2L2 -2M0 12L12 0M10 14L14 10',stroke:'#c65b47','stroke-width':2}));
  const defs=shape('defs',{});defs.append(hatch);
- function area(f,fill,stroke,width){
+ function area(f,fill,stroke,width,kind){
   const d=f.geometry.coordinates.flatMap(poly=>poly.map(ring=>'M'+ring.map(p=>xy(p).join(',')).join('L')+'Z')).join(' ');
-  shape('path',{d,fill,stroke,'fill-rule':'evenodd','stroke-width':width});
+  shape('path',{d,fill,stroke,class:kind,'fill-rule':'evenodd','stroke-width':width});
  }
- geo.bounds.forEach(f=>area(f,'#fbfaf0','#85989c',2));
- geo.objects.filter(f=>!geo.barriers.includes(f)).forEach(f=>area(f,'#d7dfe1','#9daeb2',2));
+ geo.bounds.forEach(f=>area(f,'#fbfaf0','#85989c',2,'boundary'));
+ geo.objects.filter(f=>!geo.barriers.includes(f)).forEach(f=>area(f,'#d7dfe1','#9daeb2',2,'building'));
  for(const road of geo.roads.features){
   const closed=geo.closed.includes(road.properties.id);
-  shape('polyline',{points:points(road.geometry.coordinates.map(xy)),fill:'none',stroke:closed?'#624956':'#c9d1cf','stroke-width':closed?4:2,'stroke-dasharray':closed?'8 6':'none'});
+  shape('polyline',{points:points(road.geometry.coordinates.map(xy)),fill:'none',class:closed?'closed-road':'base-road',stroke:closed?'#624956':'#c9d1cf','stroke-width':closed?4:2,'stroke-dasharray':closed?'8 6':'none'});
  }
- shape('path',{d:geo.walk.segments.map(([a,b])=>'M'+a+'L'+b).join(' '),fill:'none',stroke:'#278257','stroke-width':4,'stroke-linecap':'round'});
- geo.barriers.forEach(f=>area(f,'url(#restricted)','#a83229',3));
- if(best)shape('polyline',{points:points(best.route.path),fill:'none',stroke:'#176b87','stroke-width':7,'stroke-linejoin':'round'});
- for(const t of team)if(t.job?.route&&!t.job.arrivedAt)shape('polyline',{points:points(t.job.route.path),fill:'none',stroke:'#176b87','stroke-width':7});
+ shape('path',{d:geo.walk.segments.map(([a,b])=>'M'+a+'L'+b).join(' '),fill:'none',class:'walk-road',stroke:'#278257','stroke-width':4,'stroke-linecap':'round'});
+ geo.barriers.forEach(f=>area(f,'url(#restricted)','#a83229',3,'barrier'));
+ if(best)shape('polyline',{points:points(best.route.path),fill:'none',class:'chosen-route',stroke:'#176b87','stroke-width':7,'stroke-linejoin':'round'});
+ for(const t of team)if(t.job?.route&&!t.job.arrivedAt)shape('polyline',{points:points(t.job.route.path),fill:'none',class:'chosen-route',stroke:'#176b87','stroke-width':7});
  const focused=engineers.find(t=>t.obj===focus.value)?.point;
  const zoom=focused&&Date.now()-focused.time<=60000;
  const all=geo.bounds.flatMap(f=>f.geometry.coordinates.flat(2).map(xy)),xs=all.map(p=>p[0]),ys=all.map(p=>p[1]);
  let box=[Math.min(...xs)-45,Math.min(...ys)-45,Math.max(...xs)-Math.min(...xs)+90,Math.max(...ys)-Math.min(...ys)+90];
  if(zoom){const [x,y]=xy([focused.lon,focused.lat]);box=[x-140,y-140,280,280]}
  map.setAttribute('viewBox',box.join(' '));
+ drawBackground(box);
  function label(x,y,title,size,anchor='middle'){
   shape('text',{x,y,'font-size':size,'text-anchor':anchor,fill:'#19343d',stroke:'white','stroke-width':size/5,'paint-order':'stroke'},title);
  }
