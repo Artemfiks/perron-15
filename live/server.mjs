@@ -34,6 +34,7 @@ function deadlineBreach(call,now){
 }
 function stopPhone(user){
  const p=points.get(user.id);
+ if(agents.some(a=>a.obj===user.obj&&a.initial)&&p&&p.source!=='phone')return;
  if(user.obj==='AT-0001'&&p?.source==='phone'){
   p.stopped=true;db.record('phone-stop',user.id,null,{obj:user.obj});
  }else points.delete(user.id);
@@ -61,7 +62,7 @@ function onPosition(agent,point){
   db.record('route-update',agent.id,call,{forecast,mode:r?.mode,meters:r?.meters});
   if(!forecast||forecast>deadlineOf(call))db.record('risk','Диспетчер',call,{forecast,deadline:deadlineOf(call)});
  }
- if(call?.store&&!call.kitCollected&&call.status==='enroute'&&point.time>=call.acceptedAt&&Date.now()-point.time<=60000&&point.accuracy<=50){const pos=xy([point.lon,point.lat]);if(objects.some(f=>{const mid=center(f);return Math.hypot(mid[0]-call.store[0],mid[1]-call.store[1])<0.05&&insideZone([point.lon,point.lat],f)})){call.kitCollected=true;log('kit-collected',agent.id,call)}}
+ if(call?.store&&(!call.forceVehicle||call.boarded)&&!call.kitCollected&&call.status==='enroute'&&point.time>=call.acceptedAt&&Date.now()-point.time<=60000&&point.accuracy<=50){const pos=xy([point.lon,point.lat]);if(objects.some(f=>{const mid=center(f);return Math.hypot(mid[0]-call.store[0],mid[1]-call.store[1])<0.05&&insideZone([point.lon,point.lat],f)})){call.kitCollected=true;log('kit-collected',agent.id,call)}}
  const zoneId=call?.status==='enroute'?routing.destination(call).zone:null;
  const arrivalZone=zoneId!=null&&zones.find(z=>z.properties.id===zoneId);
  if(arrivalZone&&(!call.forceVehicle||call.boarded)&&(!call.kit||call.kitCollected)&&point.time>=call.acceptedAt&&Date.now()-point.time<=60000&&point.accuracy<=50&&insideZone([point.lon,point.lat],arrivalZone)){
