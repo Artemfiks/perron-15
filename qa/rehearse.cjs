@@ -5,7 +5,7 @@ const fs=require('node:fs'),os=require('node:os'),path=require('node:path'),asse
 (async()=>{
  const site=path.join(__dirname,'../live'),tmp=fs.mkdtempSync(path.join(os.tmpdir(),'perron-ui-'));
  const output=process.argv[2];if(!output)throw Error('Укажите папку для результатов');fs.mkdirSync(output,{recursive:true});
- const server=spawn(process.execPath,['server.mjs'],{cwd:site,env:{...process.env,HOST:'127.0.0.1',PORT:'0',STATE_DB:path.join(tmp,'ui.db'),RENDER:'test',DISPATCH_CODE:'local-dispatch',ENGINEER_ONE_CODE:'local-engineer',ENGINEER_TWO_CODE:'local-second',TRACK_KEY:'local-feed'},stdio:['ignore','pipe','inherit']});
+ const server=spawn(process.execPath,['server.mjs'],{cwd:site,env:{...process.env,SHIFT_PROFILE:'training',HOST:'127.0.0.1',PORT:'0',STATE_DB:path.join(tmp,'ui.db'),RENDER:'test',DISPATCH_CODE:'local-dispatch',ENGINEER_ONE_CODE:'local-engineer',ENGINEER_TWO_CODE:'local-second',TRACK_KEY:'local-feed'},stdio:['ignore','pipe','inherit']});
  let browser;try{
  const [chunk]=await once(server.stdout,'data'),origin=chunk.toString().match(/http:\/\/127\.0\.0\.1:\d+/)[0];
  browser=await chromium.launch({channel:'msedge',headless:true});

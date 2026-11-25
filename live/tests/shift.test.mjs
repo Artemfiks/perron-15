@@ -11,7 +11,7 @@ test('Смена через HTTP: две роли инженера, два AOG, 
  const directory=await mkdtemp(join(tmpdir(),'perron-test-'));
  let child,base;
  async function start(){
-  child=spawn(process.execPath,[fileURLToPath(new URL('../server.mjs',import.meta.url))],{env:{...process.env,HOST:'127.0.0.1',PORT:'0',STATE_DB:join(directory,'shift.db'),RENDER:'test',DISPATCH_CODE:'test-d',ENGINEER_ONE_CODE:'test-a',ENGINEER_TWO_CODE:'test-b',TRACK_KEY:'test-feed'},stdio:['ignore','pipe','inherit']});
+  child=spawn(process.execPath,[fileURLToPath(new URL('../server.mjs',import.meta.url))],{env:{...process.env,SHIFT_PROFILE:'training',HOST:'127.0.0.1',PORT:'0',STATE_DB:join(directory,'shift.db'),RENDER:'test',DISPATCH_CODE:'test-d',ENGINEER_ONE_CODE:'test-a',ENGINEER_TWO_CODE:'test-b',TRACK_KEY:'test-feed'},stdio:['ignore','pipe','inherit']});
   const [out]=await Promise.race([once(child.stdout,'data'),once(child,'exit').then(()=>{throw Error('Сервер остановился')})]);base=out.toString().match(/http:\/\/127\.0\.0\.1:\d+/)[0];
  }
  async function stop(){if(child&&child.exitCode===null){const done=once(child,'exit');child.kill();await done}}

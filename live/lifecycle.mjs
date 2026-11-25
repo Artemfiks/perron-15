@@ -5,7 +5,7 @@ export function transition(call,action,time){
  if(!status)throw Object.assign(Error('Действие недоступно на текущем этапе'),{status:409});
  call.status=status;
  if(action==='accept')call.acceptedAt=time;
- if(action==='arrive'){call.arrivedAt=time;call.inLimit=time-call.createdAt<=900000;}
+ if(action==='arrive'){call.arrivedAt=time;call.inLimit=time<=(call.testDeadline??(call.createdAt+900000));}
  if(action==='done')call.completedAt=time;
  return status;
 }

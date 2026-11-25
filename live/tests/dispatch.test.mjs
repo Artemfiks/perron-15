@@ -14,7 +14,7 @@ test('Автоотправка, отказ, таймер без браузера
  const file=join(directory,'shift.db');
  const overdue={number:1,status:'pending',createdAt:Date.now()-901000,zone:1,priority:'A',ata:98,aircraft:'A320'};
  const initial=journal(file);initial.record('registered','Тест',overdue,{}, {calls:[overdue],pending:[1],jobs:[]});initial.close();
- const proc=spawn(process.execPath,[fileURLToPath(new URL('../server.mjs',import.meta.url))],{env:{...process.env,HOST:'127.0.0.1',PORT:'0',STATE_DB:file,RENDER:'test',DISPATCH_CODE:'dispatch',ENGINEER_ONE_CODE:'one',ENGINEER_TWO_CODE:'two',OFFER_TIMEOUT_MS:'1800'},stdio:['ignore','pipe','inherit']});
+ const proc=spawn(process.execPath,[fileURLToPath(new URL('../server.mjs',import.meta.url))],{env:{...process.env,SHIFT_PROFILE:'training',HOST:'127.0.0.1',PORT:'0',STATE_DB:file,RENDER:'test',DISPATCH_CODE:'dispatch',ENGINEER_ONE_CODE:'one',ENGINEER_TWO_CODE:'two',OFFER_TIMEOUT_MS:'1800'},stdio:['ignore','pipe','inherit']});
  try{
   const [out]=await once(proc.stdout,'data'),origin=String(out).match(/http:\/\/127\.0\.0\.1:\d+/)[0];
   async function api(path,session,body,expected=200){

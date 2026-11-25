@@ -31,9 +31,13 @@ export function journal(file){
   }
   const rows=[...arrivals.values()],mean=list=>list.length?list.reduce((s,x)=>s+x,0)/list.length:null;
   return {registered:registered.size,arrived:rows.length,withoutArrival:registered.size-rows.length,
-   onTime:rows.filter(r=>r.inLimit).length,meanSeconds:mean(rows.map(r=>r.elapsedSeconds)),
+   onTime:rows.filter(r=>r.standardInLimit??r.inLimit).length,meanSeconds:mean(rows.map(r=>r.elapsedSeconds)),
    meanEtaErrorSeconds:mean(rows.filter(r=>Number.isFinite(r.forecast)).map(r=>Math.abs(r.arrivedAt-r.forecast)/1000)),
    meanSelectionMs:mean(selection)};
  }
- return {shiftId,record,received,csv,metrics,restore:()=>JSON.parse(db.prepare('SELECT json FROM state WHERE id=1').get()?.json||'null'),close:()=>db.close()};
+ function lastFix(obj){
+  const row=db.prepare("SELECT e.detail, EXISTS(SELECT 1 FROM events s WHERE s.kind='phone-stop' AND s.actor=e.actor AND s.seq>e.seq) AS stopped FROM events e WHERE e.kind='gps-fix' AND json_extract(e.detail,'$.obj')=? ORDER BY e.seq DESC LIMIT 1").get(obj);
+  return row?{...JSON.parse(row.detail),stopped:!!row.stopped}:null;
+ }
+ return {lastFix,shiftId,record,received,csv,metrics,restore:()=>JSON.parse(db.prepare('SELECT json FROM state WHERE id=1').get()?.json||'null'),close:()=>db.close()};
 }

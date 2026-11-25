@@ -1,5 +1,6 @@
+export const deadlineOf=call=>call.testDeadline??(call.createdAt+900000);
 export function forecast(call, minutes, now) {
-  const deadline = call.createdAt + 900000;
+  const deadline = deadlineOf(call);
   const eta = now + Math.round(minutes * 60000);
   return {eta, deadline, marginMs: deadline - eta, inTime: eta <= deadline};
 }

@@ -1,4 +1,4 @@
-export function track(body, agents, points, onApply=()=>{}, now=Date.now()){
+export function track(body, agents, points, onApply=()=>{}, now=Date.now(),source='feed'){
  const batch=Object.hasOwn(body,'points');
  const input=batch?body.points:[body];
  const bad=()=>{throw Object.assign(Error('Некорректные координаты или поля точки'),{status:400})};
@@ -12,8 +12,9 @@ export function track(body, agents, points, onApply=()=>{}, now=Date.now()){
  });
  const result=rows.map(p=>{
   const a=agents.find(x=>x.obj===p.obj);
-  const applied=!!a&&p.accuracy<=100&&p.time<=now+5000&&p.time>(points.get(a.id)?.time??0);
-  if(applied){points.set(a.id,p);onApply(a,p)}
+  const allowed=a&&!(a.obj==='AT-0001'&&a.initial&&source!=='phone')&&a.enabled!==false;
+  const applied=!!allowed&&p.accuracy<=100&&p.time<=now+5000&&p.time>(points.get(a.id)?.time??0);
+  if(applied){p.source=source;points.set(a.id,p);onApply(a,p)}
   return {accepted:true,applied,obj:p.obj,t:new Date(p.time).toISOString()};
  });
  return batch?result:result[0];
