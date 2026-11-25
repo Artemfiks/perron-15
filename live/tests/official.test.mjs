@@ -88,7 +88,11 @@ test('Конкурсная смена через HTTP: телефон, стоя�
   assert.equal((await api('me',e)).obj,'AT-0001');
   const all=await api('agents',d);assert.equal(all.length,20);assert(all.every(a=>a.point.source==='start'));
   const fix=gps('AT-0001',engineers[1].initial);
-  await api('competition-feed',d,{enable:true});await api('v1/track',e,fix);
+  const sample=gps('vehicle-01',all.find(a=>a.obj==='vehicle-01').initial);
+  const otherSource=await fetch(base+'/api/v1/track',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(sample)});
+  assert.equal(otherSource.status,401);
+  assert.equal((await api('v1/track','',sample)).applied,true);
+  await api('v1/track',e,fix);
   assert.equal((await api('v1/track','',gps('AT-0001',engineers[0].initial))).applied,false);
   await api('vehicle-participation',d,{enabled:true});
   assert.equal((await api('v1/track','',gps('vehicle-03',all.find(a=>a.obj==='vehicle-03').initial))).applied,true);

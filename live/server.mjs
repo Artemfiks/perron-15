@@ -249,7 +249,8 @@ async function handle(req,res){
  const path = req.url.split('?')[0];
  if((req.method==='GET'||req.method==='HEAD')&&path==='/healthz'){res.writeHead(200,{'Content-Type':'text/plain','Cache-Control':'no-store'});return res.end(req.method==='HEAD'?'':'ready')}
  if(req.method==='HEAD'&&path==='/'){res.writeHead(200,{'Content-Type':'text/html; charset=utf-8'});return res.end()}
- if(path==='/api/v1/track'&&req.headers.origin==='https://itsim.geolaba.net'){
+ const simulatorRequest=path==='/api/v1/track'&&req.headers.origin==='https://itsim.geolaba.net';
+ if(simulatorRequest){
   res.setHeader('Access-Control-Allow-Origin',req.headers.origin);res.setHeader('Vary','Origin');
   if(req.method==='OPTIONS'){
    res.writeHead(204,{'Access-Control-Allow-Methods':'POST, OPTIONS','Access-Control-Allow-Headers':'Content-Type, Authorization'});return res.end();
@@ -315,7 +316,7 @@ async function handle(req,res){
  if(path==='/api/competition-feed'&&post&&user?.role==='dispatcher'){feedUntil=body.enable?Date.now()+3600000:0;log('competition-feed',user.id,null,{feedUntil});return send({feedUntil})}
  if(path==='/api/v1/track' && post){
   const beacon=beacons.get(req.headers.authorization?.slice(7));
-  const external=req.headers.authorization==='Bearer '+feedKey||(!user&&Date.now()<feedUntil)||(beacon?.until>Date.now()&&body.obj===beacon.obj&&!Object.hasOwn(body,'points'));
+  const external=req.headers.authorization==='Bearer '+feedKey||(!user&&(simulatorRequest||Date.now()<feedUntil))||(beacon?.until>Date.now()&&body.obj===beacon.obj&&!Object.hasOwn(body,'points'));
   if(!external&&!user)fail(401,'Нужен ключ источника');
   if(!external&&user.role==='mcc')fail(403,'Рабочее место MCC не передаёт GPS');
   if(!external&&user.role==='engineer'&&(body.obj!==user.obj||Object.hasOwn(body,'points')))fail(403,'Доступ только к своей позиции');
